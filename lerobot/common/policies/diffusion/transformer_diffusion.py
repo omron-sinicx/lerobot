@@ -9,11 +9,7 @@ from typing import Callable, Union, Optional, Tuple
 import einops
 import numpy as np
 import torch
-import torch.nn.functional as F  # noqa: N812
-import torchvision
-from diffusers.schedulers.scheduling_ddim import DDIMScheduler
-from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
-from huggingface_hub import PyTorchModelHubMixin
+import torch.nn.functional as F 
 from torch import Tensor, nn
 import logging 
 
@@ -52,7 +48,7 @@ class TransformerForDiffusion(ModuleAttrMixin):
             output_dim: int, # action state 2 equal to input 
             horizon: int, # T 16
             n_obs_steps: int = None, # Ta
-            cond_dim: int = 0, # image + obs take from resnet 
+            cond_dim: int = 0, # image + obs take from resnet global dim 
             n_layer: int = 12,
             n_head: int = 12,
             n_emb: int = 768,
@@ -60,7 +56,7 @@ class TransformerForDiffusion(ModuleAttrMixin):
             p_drop_attn: float = 0.1,
             causal_attn: bool=False, # masking of subsequent actions i think
             time_as_cond: bool=True, # check what it does and if its already done in lerobot pre entering the model 
-            obs_as_cond: bool=False, # I think true?
+            obs_as_cond: bool=True, # I think true?
             n_cond_layers: int = 0 # need to check
         ) -> None:
         super().__init__()
@@ -70,7 +66,7 @@ class TransformerForDiffusion(ModuleAttrMixin):
             n_obs_steps = horizon
         
         T = horizon
-        T_cond = 1
+        T_cond = 1 # i don't understand this increase to the sequence / they remove later for conditioning 
         if not time_as_cond:
             T += 1
             T_cond -= 1
@@ -89,7 +85,7 @@ class TransformerForDiffusion(ModuleAttrMixin):
         self.cond_obs_emb = None
         
         if obs_as_cond:
-            self.cond_obs_emb = nn.Linear(cond_dim, n_emb)
+            self.cond_obs_emb = nn.Linear(cond_dim, n_emb) 
 
         self.cond_pos_emb = None
         self.encoder = None
@@ -97,7 +93,7 @@ class TransformerForDiffusion(ModuleAttrMixin):
         encoder_only = False
         if T_cond > 0:
             self.cond_pos_emb = nn.Parameter(torch.zeros(1, T_cond, n_emb))
-            if n_cond_layers > 0:
+            if n_cond_layers > 0: # I assume it will always be bigger ? here self attention is for the condition? 
                 encoder_layer = nn.TransformerEncoderLayer(
                     d_model=n_emb,
                     nhead=n_head,
