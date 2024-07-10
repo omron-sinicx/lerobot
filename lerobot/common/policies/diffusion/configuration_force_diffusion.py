@@ -122,6 +122,8 @@ class ForceDiffusionConfig:
     output_normalization_modes: dict[str, str] = field(default_factory=lambda: {"action": "min_max"})
 
     # Architecture / modeling.
+    # model: str = "FILM"
+    model: str = "TRANSFORMER"
     # Vision backbone.
     vision_backbone: str = "resnet18"
     crop_shape: tuple[int, int] | None = (84, 84)
@@ -129,21 +131,24 @@ class ForceDiffusionConfig:
     pretrained_backbone_weights: str | None = None
     use_group_norm: bool = True
     spatial_softmax_num_keypoints: int = 32
-    # Unet.
+    # Unet / FILM
     down_dims: tuple[int, ...] = (512, 1024, 2048)
     kernel_size: int = 5
     n_groups: int = 8
     diffusion_step_embed_dim: int = 128
     use_film_scale_modulation: bool = True
     # Noise scheduler.
-    noise_scheduler_type: str = "DDPM"
-    num_train_timesteps: int = 100
+    noise_scheduler_type: str = "DDIM"
+    num_train_timesteps: int = 10
     beta_schedule: str = "squaredcos_cap_v2"
     beta_start: float = 0.0001
     beta_end: float = 0.02
     prediction_type: str = "epsilon"
     clip_sample: bool = True
     clip_sample_range: float = 1.0
+
+    #Transformer
+
 
     # Inference
     num_inference_steps: int | None = None
