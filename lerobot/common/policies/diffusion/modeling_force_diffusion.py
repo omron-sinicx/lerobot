@@ -36,12 +36,13 @@ from torch import Tensor, nn
 
 from lerobot.common.policies.diffusion.configuration_force_diffusion import ForceDiffusionConfig
 from lerobot.common.policies.normalize import Normalize, Unnormalize
+from lerobot.common.policies.diffusion.transformer_diffusion import TransformerForDiffusion
 from lerobot.common.policies.utils import (
     get_device_from_parameters,
     get_dtype_from_parameters,
     populate_queues,
 )
-
+import timeit
 
 class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
     """
@@ -163,13 +164,23 @@ class DiffusionModel(nn.Module):
 
         self.rgb_encoder = DiffusionRgbEncoder(config)
         num_images = len([k for k in config.input_shapes if k.startswith("observation.image")])
-        self.unet = DiffusionConditionalUnet1d(
-            config,
-            global_cond_dim=(
-                config.input_shapes["observation.state"][0] + self.rgb_encoder.feature_dim * num_images
+        
+        if self.config.model == "FILM":
+            self.unet = DiffusionConditionalUnet1d(
+                config,
+                global_cond_dim=(
+                    config.input_shapes["observation.state"][0] + self.rgb_encoder.feature_dim * num_images
+                )
+                * config.n_obs_steps,
             )
-            * config.n_obs_steps,
-        )
+        elif self.config.model == "TRANSFORMER":
+            self.unet = TransformerForDiffusion(
+                input_dim = config.output_shapes["action"][0],
+                output_dim = config.output_shapes["action"][0],
+                horizon = config.horizon,
+                n_obs_steps = config.n_obs_steps   
+            )
+
 
         self.noise_scheduler = _make_noise_scheduler(
             config.noise_scheduler_type,
@@ -228,8 +239,14 @@ class DiffusionModel(nn.Module):
         img_features = einops.rearrange(
             img_features, "(b s n) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
         )
-        # Concatenate state and image features then flatten to (B, global_cond_dim).
-        return torch.cat([batch["observation.state"], img_features], dim=-1).flatten(start_dim=1)
+
+        # Concatenate state and image features then flatten to (B, global_cond_dim) incase of transformer it would be (B, T, global_cond_dim)
+        if self.config.model == "FILM":
+            output = torch.cat([batch["observation.state"], img_features], dim=-1).flatten(start_dim=1)
+        elif self.config.model == "TRANSFORMER":
+            output = torch.cat([batch["observation.state"], img_features], dim=-1)
+        
+        return output 
 
     def generate_actions(self, batch: dict[str, Tensor]) -> Tensor:
         """
@@ -246,7 +263,9 @@ class DiffusionModel(nn.Module):
         global_cond = self._prepare_global_conditioning(batch)  # (B, global_cond_dim)
 
         # run sampling
+        start_time = timeit.default_timer()
         actions = self.conditional_sample(batch_size, global_cond=global_cond)
+        print(f"the time for computing actions {timeit.default_timer() - start_time}")
 
         # Extract `n_action_steps` steps worth of actions (from the current observation).
         start = n_obs_steps - 1
