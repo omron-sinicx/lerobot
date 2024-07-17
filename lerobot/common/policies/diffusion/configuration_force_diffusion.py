@@ -108,7 +108,7 @@ class ForceDiffusionConfig:
     )
     output_shapes: dict[str, list[int]] = field(
         default_factory=lambda: {
-            "action": [6],
+            "action": [3],
         }
     )
 
