@@ -46,7 +46,6 @@ from lerobot.common.policies.utils import (
     get_dtype_from_parameters,
     populate_queues,
 )
-import timeit
 
 
 class ModuleAttrMixin(nn.Module):
