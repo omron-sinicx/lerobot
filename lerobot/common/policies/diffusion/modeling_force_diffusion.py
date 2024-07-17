@@ -40,11 +40,13 @@ import timeit
 
 from lerobot.common.policies.diffusion.configuration_force_diffusion import ForceDiffusionConfig
 from lerobot.common.policies.normalize import Normalize, Unnormalize
+from lerobot.common.policies.diffusion.transformer_diffusion import TransformerForDiffusion
 from lerobot.common.policies.utils import (
     get_device_from_parameters,
     get_dtype_from_parameters,
     populate_queues,
 )
+import timeit
 
 
 class ModuleAttrMixin(nn.Module):
@@ -224,6 +226,7 @@ class DiffusionModel(nn.Module):
                 obs_as_cond = config.obs_as_cond, 
                 n_cond_layers = config.n_cond_layers
             )
+
 
         self.noise_scheduler = _make_noise_scheduler(
             config.noise_scheduler_type,
