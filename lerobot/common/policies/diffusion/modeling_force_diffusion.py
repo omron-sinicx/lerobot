@@ -40,7 +40,6 @@ import timeit
 
 from lerobot.common.policies.diffusion.configuration_force_diffusion import ForceDiffusionConfig
 from lerobot.common.policies.normalize import Normalize, Unnormalize
-from lerobot.common.policies.diffusion.transformer_diffusion import TransformerForDiffusion
 from lerobot.common.policies.utils import (
     get_device_from_parameters,
     get_dtype_from_parameters,
@@ -122,6 +121,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         self._queues = {
             "observation.images": deque(maxlen=self.config.n_obs_steps),
             "observation.state": deque(maxlen=self.config.n_obs_steps),
+            "observation.ft": deque(maxlen=self.config.n_obs_steps),
             "action": deque(maxlen=self.config.n_action_steps),
         }
 
@@ -183,6 +183,8 @@ def _make_noise_scheduler(name: str, **kwargs: dict) -> DDPMScheduler | DDIMSche
         return DDPMScheduler(**kwargs)
     elif name == "DDIM":
         return DDIMScheduler(**kwargs)
+    elif name == "DPM":
+        return DPMSolverMultistepScheduler(**kwargs)
     else:
         raise ValueError(f"Unsupported noise scheduler type {name}")
 
@@ -194,12 +196,14 @@ class DiffusionModel(nn.Module):
 
         self.rgb_encoder = DiffusionRgbEncoder(config)
         num_images = len([k for k in config.input_shapes if k.startswith("observation.image")])
+
+        global_cond_dim = config.input_shapes["observation.state"][0] + config.input_shapes["observation.ft"][0] + self.rgb_encoder.feature_dim * num_images
         
         if self.config.model == "FILM":
             self.unet = DiffusionConditionalUnet1d(
                 config,
                 global_cond_dim=(
-                    config.input_shapes["observation.state"][0] + self.rgb_encoder.feature_dim * num_images
+                    config.input_shapes["observation.state"][0] + config.input_shapes["observation.ft"][0] + self.rgb_encoder.feature_dim * num_images
                 )
                 * config.n_obs_steps,
             )
@@ -208,9 +212,18 @@ class DiffusionModel(nn.Module):
                 input_dim = config.output_shapes["action"][0],
                 output_dim = config.output_shapes["action"][0],
                 horizon = config.horizon,
-                n_obs_steps = config.n_obs_steps   
+                n_obs_steps = config.n_obs_steps,
+                cond_dim = global_cond_dim , # image + obs take from resnet global dim
+                n_layer  = config.n_layer,
+                n_head   = config.n_head,
+                n_emb    = config.n_emb,
+                p_drop_emb = 0.0,
+                p_drop_attn = 0.01,
+                causal_attn = config.casual_attn, 
+                time_as_cond = config.obs_as_cond, 
+                obs_as_cond = config.obs_as_cond, 
+                n_cond_layers = config.n_cond_layers
             )
-
 
         self.noise_scheduler = _make_noise_scheduler(
             config.noise_scheduler_type,
@@ -268,14 +281,14 @@ class DiffusionModel(nn.Module):
         # dim (effectively concatenating the camera features).
         img_features = einops.rearrange(
             img_features, "(b s n) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
-        )
-
+        ) #img_feature shape is config.softmax * 2 * num_cameras
+        
         # Concatenate state and image features then flatten to (B, global_cond_dim) incase of transformer it would be (B, T, global_cond_dim)
         if self.config.model == "FILM":
-            output = torch.cat([batch["observation.state"], img_features], dim=-1).flatten(start_dim=1)
+            output = torch.cat([batch["observation.state"], batch["observation.ft"], img_features], dim=-1).flatten(start_dim=1)
         elif self.config.model == "TRANSFORMER":
-            output = torch.cat([batch["observation.state"], img_features], dim=-1)
-        
+            output = torch.cat([batch["observation.state"], batch["observation.ft"], img_features], dim=-1) # u add the state to the end of the image feature [B, To, sp*num_cam + statedim]
+
         return output 
 
     def generate_actions(self, batch: dict[str, Tensor]) -> Tensor:
@@ -315,7 +328,7 @@ class DiffusionModel(nn.Module):
         }
         """
         # Input validation.
-        assert set(batch).issuperset({"observation.state", "observation.images", "action", "action_is_pad"})
+        assert set(batch).issuperset({"observation.state", "observation.ft", "observation.images", "action", "action_is_pad"})
         n_obs_steps = batch["observation.state"].shape[1]
         horizon = batch["action"].shape[1]
         assert horizon == self.config.horizon
@@ -768,11 +781,11 @@ class DiffusionConditionalResidualBlock1d(nn.Module):
 
 class DiffusionTransformer(ModuleAttrMixin):
     def __init__(self,
-            input_dim: int, #action state 2?
-            output_dim: int, # action state 2 equal to input 
+            input_dim: int, #action dim 2?
+            output_dim: int, # action dim 2 equal to input 
             horizon: int, # T 16
-            n_obs_steps: int = None, # Ta
-            cond_dim: int = 0, # image + obs take from resnet global dim 
+            n_obs_steps: int = 67, # Ta
+            cond_dim: int = 64, # image + obs take from resnet global dim 
             n_layer: int = 8,
             n_head: int = 4,
             n_emb: int = 256,
@@ -1029,7 +1042,7 @@ class DiffusionTransformer(ModuleAttrMixin):
     def forward(self, 
         sample: torch.Tensor, 
         timestep: Union[torch.Tensor, float, int], 
-        cond: Optional[torch.Tensor]=None, **kwargs):
+        global_cond: Optional[torch.Tensor]=None, **kwargs):
         """
         x: (B,T,input_dim)
         timestep: (B,) or int, diffusion step
@@ -1068,7 +1081,7 @@ class DiffusionTransformer(ModuleAttrMixin):
             # encoder
             cond_embeddings = time_emb
             if self.obs_as_cond:
-                cond_obs_emb = self.cond_obs_emb(cond)
+                cond_obs_emb = self.cond_obs_emb(global_cond)
                 # (B,To,n_emb)
                 cond_embeddings = torch.cat([cond_embeddings, cond_obs_emb], dim=1)
             tc = cond_embeddings.shape[1]

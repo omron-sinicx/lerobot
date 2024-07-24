@@ -102,12 +102,13 @@ class ForceDiffusionConfig:
         default_factory=lambda: {
             "observation.image.agentview": [3, 96, 96],
             "observation.image.robot1_eye_in_hand":  [3, 96, 96],
-            "observation.state": [3],
+            "observation.state": [6],
+            "observation.ft": [6],
         }
     )
     output_shapes: dict[str, list[int]] = field(
         default_factory=lambda: {
-            "action": [3],
+            "action": [6],
         }
     )
 
@@ -117,13 +118,14 @@ class ForceDiffusionConfig:
             "observation.image.agentview": "mean_std",
             "observation.image.robot1_eye_in_hand": "mean_std",
             "observation.state": "min_max",
+            "observation.ft": "min_max",
         }
     )
     output_normalization_modes: dict[str, str] = field(default_factory=lambda: {"action": "min_max"})
 
     # Architecture / modeling.
-    model: str = "FILM"
-    # model: str = "TRANSFORMER"
+    # model: str = "FILM"
+    model: str = "TRANSFORMER"
     # Vision backbone.
     vision_backbone: str = "resnet18"
     crop_shape: tuple[int, int] | None = (84, 84)
@@ -141,7 +143,7 @@ class ForceDiffusionConfig:
     
     # Noise scheduler.
     noise_scheduler_type: str = "DDIM"
-    num_train_timesteps: int = 100
+    num_train_timesteps: int = 20
     beta_schedule: str = "squaredcos_cap_v2"
     beta_start: float = 0.0001
     beta_end: float = 0.02
@@ -149,11 +151,16 @@ class ForceDiffusionConfig:
     clip_sample: bool = True
     clip_sample_range: float = 1.0
 
-    #Transformer / need to fill later 
+    #Transformer 
     n_layer: int = 12
     n_head: int = 12
-    n_emb: int = 768
-    casual_attn: bool = False
+    n_emb: int = 256 #768
+    p_drop_emb: float = 0.0
+    p_drop_attn: float = 0.01
+    casual_attn: bool = True
+    time_as_cond: bool = True
+    obs_as_cond: bool = True
+    n_cond_layers: int = 4
 
     # Inference
     num_inference_steps: int | None = None
@@ -192,7 +199,7 @@ class ForceDiffusionConfig:
             raise ValueError(
                 f"`prediction_type` must be one of {supported_prediction_types}. Got {self.prediction_type}."
             )
-        supported_noise_schedulers = ["DDPM", "DDIM"]
+        supported_noise_schedulers = ["DDPM", "DDIM", "DPM"]
         if self.noise_scheduler_type not in supported_noise_schedulers:
             raise ValueError(
                 f"`noise_scheduler_type` must be one of {supported_noise_schedulers}. "
