@@ -143,7 +143,7 @@ class ForceDiffusionConfig:
     
     # Noise scheduler.
     noise_scheduler_type: str = "DDIM"
-    num_train_timesteps: int = 20
+    num_train_timesteps: int = 30
     beta_schedule: str = "squaredcos_cap_v2"
     beta_start: float = 0.0001
     beta_end: float = 0.02
@@ -154,7 +154,7 @@ class ForceDiffusionConfig:
     #Transformer 
     n_layer: int = 12
     n_head: int = 12
-    n_emb: int = 256 #768
+    n_emb: int = 768
     p_drop_emb: float = 0.0
     p_drop_attn: float = 0.01
     casual_attn: bool = True
