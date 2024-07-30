@@ -152,15 +152,15 @@ class ForceDiffusionConfig:
     clip_sample_range: float = 1.0
 
     #Transformer 
-    n_layer: int = 12
-    n_head: int = 12
+    n_layer: int = 8
+    n_head: int = 4
     n_emb: int = 768
     p_drop_emb: float = 0.0
     p_drop_attn: float = 0.01
     casual_attn: bool = True
     time_as_cond: bool = True
     obs_as_cond: bool = True
-    n_cond_layers: int = 4
+    n_cond_layers: int = 2
 
     # Inference
     num_inference_steps: int | None = None
@@ -199,7 +199,7 @@ class ForceDiffusionConfig:
             raise ValueError(
                 f"`prediction_type` must be one of {supported_prediction_types}. Got {self.prediction_type}."
             )
-        supported_noise_schedulers = ["DDPM", "DDIM", "DPM"]
+        supported_noise_schedulers = ["DDPM", "DDIM"]
         if self.noise_scheduler_type not in supported_noise_schedulers:
             raise ValueError(
                 f"`noise_scheduler_type` must be one of {supported_noise_schedulers}. "
