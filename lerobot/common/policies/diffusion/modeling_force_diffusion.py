@@ -103,6 +103,8 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
 
         self.expected_image_keys = [k for k in config.input_shapes if k.startswith("observation.image")]
 
+        self.other_obs = [k for k in config.input_shapes if not k.startswith("observation.image")]
+
         self.reset()
     
     def get_optimizer_parameters(self):
@@ -121,7 +123,6 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         self._queues = {
             "observation.images": deque(maxlen=self.config.n_obs_steps),
             "observation.state": deque(maxlen=self.config.n_obs_steps),
-            "observation.ft": deque(maxlen=self.config.n_obs_steps),
             "action": deque(maxlen=self.config.n_action_steps),
         }
 
@@ -149,6 +150,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         """
         batch = self.normalize_inputs(batch)
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
+        batch["observation.state"] = torch.cat([batch[k] for k in self.other_obs], dim=-1)
         # Note: It's important that this happens after stacking the images into a single key.
         self._queues = populate_queues(self._queues, batch)
 
@@ -169,6 +171,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         """Run the batch through the model and compute the loss for training or validation."""
         batch = self.normalize_inputs(batch)
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
+        batch["observation.state"] = torch.cat([batch[k] for k in self.other_obs], dim=-1)
         batch = self.normalize_targets(batch)
         loss = self.diffusion.compute_loss(batch)
         return {"loss": loss}
@@ -183,8 +186,6 @@ def _make_noise_scheduler(name: str, **kwargs: dict) -> DDPMScheduler | DDIMSche
         return DDPMScheduler(**kwargs)
     elif name == "DDIM":
         return DDIMScheduler(**kwargs)
-    elif name == "DPM":
-        return DPMSolverMultistepScheduler(**kwargs)
     else:
         raise ValueError(f"Unsupported noise scheduler type {name}")
 
@@ -197,13 +198,19 @@ class DiffusionModel(nn.Module):
         self.rgb_encoder = DiffusionRgbEncoder(config)
         num_images = len([k for k in config.input_shapes if k.startswith("observation.image")])
 
-        global_cond_dim = config.input_shapes["observation.state"][0] + config.input_shapes["observation.ft"][0] + self.rgb_encoder.feature_dim * num_images
+        # Get the keys that do not start with "observation.image"
+        other_obs_keys = [k for k in config.input_shapes if not k.startswith("observation.image")]
+
+        # Sum the first dimension of the shapes of these keys
+        state_shape = sum(config.input_shapes[key][0] for key in other_obs_keys) # add to another later 
+
+        global_cond_dim = state_shape + self.rgb_encoder.feature_dim * num_images
         
         if self.config.model == "FILM":
             self.unet = DiffusionConditionalUnet1d(
                 config,
                 global_cond_dim=(
-                    config.input_shapes["observation.state"][0] + config.input_shapes["observation.ft"][0] + self.rgb_encoder.feature_dim * num_images
+                    state_shape + self.rgb_encoder.feature_dim * num_images
                 )
                 * config.n_obs_steps,
             )
@@ -282,12 +289,12 @@ class DiffusionModel(nn.Module):
         img_features = einops.rearrange(
             img_features, "(b s n) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
         ) #img_feature shape is config.softmax * 2 * num_cameras
-        
+
         # Concatenate state and image features then flatten to (B, global_cond_dim) incase of transformer it would be (B, T, global_cond_dim)
         if self.config.model == "FILM":
-            output = torch.cat([batch["observation.state"], batch["observation.ft"], img_features], dim=-1).flatten(start_dim=1)
+            output = torch.cat([batch["observation.state"], img_features], dim=-1).flatten(start_dim=1)
         elif self.config.model == "TRANSFORMER":
-            output = torch.cat([batch["observation.state"], batch["observation.ft"], img_features], dim=-1) # u add the state to the end of the image feature [B, To, sp*num_cam + statedim]
+            output = torch.cat([batch["observation.state"], img_features], dim=-1) # u add the state to the end of the image feature [B, To, sp*num_cam + statedim]
 
         return output 
 
@@ -321,14 +328,14 @@ class DiffusionModel(nn.Module):
         """
         This function expects `batch` to have (at least):
         {
-            "observation.state": (B, n_obs_steps, state_dim)
+            "observation.state": (B, n_obs_steps, state_dim + whatever extra)
             "observation.images": (B, n_obs_steps, num_cameras, C, H, W)
             "action": (B, horizon, action_dim)
             "action_is_pad": (B, horizon)
         }
         """
         # Input validation.
-        assert set(batch).issuperset({"observation.state", "observation.ft", "observation.images", "action", "action_is_pad"})
+        assert set(batch).issuperset({"observation.state", "observation.images", "action", "action_is_pad"}) # needs to be changed 
         n_obs_steps = batch["observation.state"].shape[1]
         horizon = batch["action"].shape[1]
         assert horizon == self.config.horizon
