@@ -109,8 +109,9 @@ def load_from_raw(raw_dir: Path, videos_dir: Path, fps: int, video: bool, episod
         for image_key in image_keys:
             # load 57MB of images in RAM (400x224x224x3 uint8)
             imgs_array = zarr_data[image_key][from_idx:to_idx]
-            camera_name = image_key.split("/")[1]
+            camera_name = image_key.split("/")[1].split("_", 1)[1]
             img_key = "observation.image." + camera_name
+            print(f"this is the image key bitch {img_key}")
             img_keys.append(img_key)
             if video:
                 # save png images in temporary directory
