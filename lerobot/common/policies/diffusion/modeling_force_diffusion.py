@@ -167,9 +167,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
             action_list = torch.split(actions, split_size_or_sections= self.output_sizes, dim=-1) 
 
             actions = self.unnormalize_outputs(dict(zip(self.output_keys, action_list)))
-            print(f"the unnormalized actions list is {actions.keys()}")
-
-            actions = self.unnormalize_outputs({"action": actions})["action"] #needs to be changed
+            # print(f"the unnormalized actions list is {actions.keys()}")
 
             actions = torch.cat([actions[k] for k in self.output_keys], dim=-1)
 
