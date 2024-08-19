@@ -105,6 +105,9 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
 
         self.other_obs = [k for k in config.input_shapes if not k.startswith("observation.image")]
 
+        self.output_keys = [k for k in config.output_shapes if k.startswith("action")] # to be implemented to take handle multiple outputs 
+        self.output_sizes = [config.output_shapes[action][0] for action in config.output_shapes if action.startswith("action")]
+
         self.reset()
     
     def get_optimizer_parameters(self):
@@ -160,7 +163,15 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
             actions = self.diffusion.generate_actions(batch)
 
             # TODO(rcadene): make above methods return output dictionary?
-            actions = self.unnormalize_outputs({"action": actions})["action"]
+            #seperate the action outputs into seperate entites
+            action_list = torch.split(actions, split_size_or_sections= self.output_sizes, dim=-1) 
+
+            actions = self.unnormalize_outputs(dict(zip(self.output_keys, action_list)))
+            print(f"the unnormalized actions list is {actions.keys()}")
+
+            actions = self.unnormalize_outputs({"action": actions})["action"] #needs to be changed
+
+            actions = torch.cat([actions[k] for k in self.output_keys], dim=-1)
 
             self._queues["action"].extend(actions.transpose(0, 1))
 
@@ -172,6 +183,8 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         batch = self.normalize_inputs(batch)
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
         batch["observation.state"] = torch.cat([batch[k] for k in self.other_obs], dim=-1)
+        #concatenate the actions here 
+        batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
         batch = self.normalize_targets(batch)
         loss = self.diffusion.compute_loss(batch)
         return {"loss": loss}
@@ -201,6 +214,11 @@ class DiffusionModel(nn.Module):
         # Get the keys that do not start with "observation.image"
         other_obs_keys = [k for k in config.input_shapes if not k.startswith("observation.image")]
 
+        #get the keys for the action
+        output_keys = [k for k in config.output_shapes if k.startswith("action")]
+        output_sizes = [config.output_shapes[action][0] for action in config.output_shapes if action.startswith("action")]
+        output_sum = sum(output_sizes)
+
         # Sum the first dimension of the shapes of these keys
         state_shape = sum(config.input_shapes[key][0] for key in other_obs_keys) # add to another later 
 
@@ -216,8 +234,8 @@ class DiffusionModel(nn.Module):
             )
         elif self.config.model == "TRANSFORMER":
             self.unet = DiffusionTransformer(
-                input_dim = config.output_shapes["action"][0],
-                output_dim = config.output_shapes["action"][0],
+                input_dim = output_sum, #replace with output sum
+                output_dim = output_sum, # replace with output sum 
                 horizon = config.horizon,
                 n_obs_steps = config.n_obs_steps,
                 cond_dim = global_cond_dim , # image + obs take from resnet global dim
@@ -788,20 +806,20 @@ class DiffusionConditionalResidualBlock1d(nn.Module):
 
 class DiffusionTransformer(ModuleAttrMixin):
     def __init__(self,
-            input_dim: int, #action dim 2?
-            output_dim: int, # action dim 2 equal to input 
+            input_dim: int, #action dim 
+            output_dim: int, # action dim equal to input 
             horizon: int, # T 16
-            n_obs_steps: int = 67, # Ta
-            cond_dim: int = 64, # image + obs take from resnet global dim 
-            n_layer: int = 8,
-            n_head: int = 4,
-            n_emb: int = 256,
-            p_drop_emb: float = 0.0,
-            p_drop_attn: float = 0.01,
-            causal_attn: bool=True, # masking of subsequent actions i think
-            time_as_cond: bool=True, # check what it does and if its already done in lerobot pre entering the model 
-            obs_as_cond: bool=True, # I think true?
-            n_cond_layers: int = 0 # need to check
+            n_obs_steps: int, # Ta
+            cond_dim: int, # image + obs take from resnet global dim 
+            n_layer: int,
+            n_head: int,
+            n_emb: int,
+            p_drop_emb: float,
+            p_drop_attn: float,
+            causal_attn: bool, # masking of subsequent actions i think
+            time_as_cond: bool, # check what it does and if its already done in lerobot pre entering the model 
+            obs_as_cond: bool, # I think true?
+            n_cond_layers: int # need to check
         ) -> None:
         super().__init__()
 
