@@ -39,7 +39,6 @@ from lerobot.common.datasets.utils import (
     hf_transform_to_torch,
 )
 from lerobot.common.datasets.video_utils import VideoFrame, encode_video_frames
-from ur_control.transformations import axis_angle_from_quaternion, quaternion_from_axis_angle
 
 
 def get_cameras(hdf5_data):
@@ -75,10 +74,6 @@ def check_format(raw_dir) -> bool:
                     assert data[f"/observations/images/{camera}"].ndim == 4
                     b, h, w, c = data[f"/observations/images/{camera}"].shape
                     assert c < h and c < w, f"Expect (h,w,c) image format but ({h=},{w=},{c=}) provided."
-
-
-def axis_angle_conversion(axis_angle):
-    return axis_angle_from_quaternion(quaternion_from_axis_angle(axis_angle))
 
 
 def load_from_raw(
@@ -198,8 +193,10 @@ def load_from_raw(
             if "/observations/eef_pos_ortho6" in ep:
                 ep_dict["observation.eef_pos_ortho6"] = eef_pos_ortho6
             ep_dict["action"] = action
-            ep_dict["action_cholesky_ortho6"] = action_cholesky_ortho6
-            ep_dict["action_diag_ortho6"] = action_diag_ortho6
+            if "action_cholesky_ortho6" in ep:
+                ep_dict["action_cholesky_ortho6"] = action_cholesky_ortho6
+            if "action_diag_ortho6" in ep:
+                ep_dict["action_diag_ortho6"] = action_diag_ortho6
             ep_dict["episode_index"] = torch.tensor([ep_idx] * num_frames)
             ep_dict["frame_index"] = torch.arange(0, num_frames, 1)
             ep_dict["timestamp"] = torch.arange(0, num_frames, 1) / fps
