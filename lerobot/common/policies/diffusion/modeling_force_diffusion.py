@@ -182,8 +182,9 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
         batch["observation.state"] = torch.cat([batch[k] for k in self.other_obs], dim=-1)
         #concatenate the actions here 
-        batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
         batch = self.normalize_targets(batch)
+        batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
+        batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"] #needs to be changed
         loss = self.diffusion.compute_loss(batch)
         return {"loss": loss}
 
@@ -215,7 +216,7 @@ class DiffusionModel(nn.Module):
         #get the keys for the action
         output_keys = [k for k in config.output_shapes if k.startswith("action")]
         output_sizes = [config.output_shapes[action][0] for action in config.output_shapes if action.startswith("action")]
-        output_sum = sum(output_sizes)
+        self.output_sum = sum(output_sizes)
 
         # Sum the first dimension of the shapes of these keys
         state_shape = sum(config.input_shapes[key][0] for key in other_obs_keys) # add to another later 
@@ -232,8 +233,8 @@ class DiffusionModel(nn.Module):
             )
         elif self.config.model == "TRANSFORMER":
             self.unet = DiffusionTransformer(
-                input_dim = output_sum, #replace with output sum
-                output_dim = output_sum, # replace with output sum 
+                input_dim = self.output_sum, #replace with output sum
+                output_dim = self.output_sum, # replace with output sum 
                 horizon = config.horizon,
                 n_obs_steps = config.n_obs_steps,
                 cond_dim = global_cond_dim , # image + obs take from resnet global dim
@@ -273,7 +274,7 @@ class DiffusionModel(nn.Module):
 
         # Sample prior.
         sample = torch.randn(
-            size=(batch_size, self.config.horizon, self.config.output_shapes["action"][0]),
+            size=(batch_size, self.config.horizon, self.output_sum),
             dtype=dtype,
             device=device,
             generator=generator,

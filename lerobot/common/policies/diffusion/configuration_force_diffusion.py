@@ -100,10 +100,8 @@ class ForceDiffusionConfig:
 
     input_shapes: dict[str, list[int]] = field(
         default_factory=lambda: {
-            "observation.image.agentview": [3, 96, 96],
-            "observation.image.robot1_eye_in_hand":  [3, 96, 96],
+            "observation.image": [3, 480, 640],
             "observation.state": [6],
-            "observation.ft": [6],
         }
     )
     output_shapes: dict[str, list[int]] = field(
@@ -115,10 +113,8 @@ class ForceDiffusionConfig:
     # Normalization / Unnormalization
     input_normalization_modes: dict[str, str] = field(
         default_factory=lambda: {
-            "observation.image.agentview": "mean_std",
-            "observation.image.robot1_eye_in_hand": "mean_std",
+            "observation.image": "mean_std",
             "observation.state": "min_max",
-            "observation.ft": "min_max",
         }
     )
     output_normalization_modes: dict[str, str] = field(default_factory=lambda: {"action": "min_max"})
@@ -128,8 +124,7 @@ class ForceDiffusionConfig:
     model: str = "TRANSFORMER"
     # Vision backbone.
     vision_backbone: str = "resnet18"
-    crop_shape: tuple[int, int] | None = (84, 84)
-    # crop_shape: tuple[int, int] | None = (420, 420)
+    crop_shape: tuple[int, int] | None = (420, 620)
     crop_is_random: bool = True
     pretrained_backbone_weights: str | None = None
     use_group_norm: bool = True
