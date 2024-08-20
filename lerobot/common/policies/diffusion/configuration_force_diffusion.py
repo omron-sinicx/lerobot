@@ -100,8 +100,8 @@ class ForceDiffusionConfig:
 
     input_shapes: dict[str, list[int]] = field(
         default_factory=lambda: {
-            "observation.images.closeview": [3, 640, 480],
-            "observation.images.robot1_eye_in_hand":  [3, 640, 480],
+            "observation.images.closeview": [3, 480, 640],
+            "observation.images.robot1_eye_in_hand":  [3, 480, 640],
             "observation.eef_pos_ortho6": [20],
             "observation.ft": [12],
         }
@@ -129,7 +129,7 @@ class ForceDiffusionConfig:
     # Vision backbone.
     vision_backbone: str = "resnet18"
     # crop_shape: tuple[int, int] | None = (84, 84)
-    crop_shape: tuple[int, int] | None = (620, 420)
+    crop_shape: tuple[int, int] | None = (420, 620)
     crop_is_random: bool = True
     pretrained_backbone_weights: str | None = None
     use_group_norm: bool = True

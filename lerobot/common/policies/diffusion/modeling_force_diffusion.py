@@ -183,8 +183,9 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
         batch["observation.state"] = torch.cat([batch[k] for k in self.other_obs], dim=-1)
         #concatenate the actions here 
-        batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
         batch = self.normalize_targets(batch)
+        batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
+        batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"] #needs to be changed
         loss = self.diffusion.compute_loss(batch)
         return {"loss": loss}
 
