@@ -100,35 +100,30 @@ class ForceDiffusionConfig:
 
     input_shapes: dict[str, list[int]] = field(
         default_factory=lambda: {
-            "observation.images.closeview": [3, 480, 640],
-            "observation.images.robot1_eye_in_hand":  [3, 480, 640],
-            "observation.eef_pos_ortho6": [20],
-            "observation.ft": [12],
+            "observation.image": [3, 480, 640],
+            "observation.state": [6],
         }
     )
     output_shapes: dict[str, list[int]] = field(
         default_factory=lambda: {
-            "action_diag_ortho6": [31],
+            "action": [6],
         }
     )
 
     # Normalization / Unnormalization
     input_normalization_modes: dict[str, str] = field(
         default_factory=lambda: {
-            "observation.images.closeview": "mean_std",
-            "observation.images.robot1_eye_in_hand": "mean_std",
-            "observation.eef_pos_ortho6": "min_max",
-            "observation.ft": "min_max",
+            "observation.image": "mean_std",
+            "observation.state": "min_max",
         }
     )
-    output_normalization_modes: dict[str, str] = field(default_factory=lambda: {"action_diag_ortho6": "min_max"})
+    output_normalization_modes: dict[str, str] = field(default_factory=lambda: {"action": "min_max"})
 
     # Architecture / modeling.
     # model: str = "FILM"
     model: str = "TRANSFORMER"
     # Vision backbone.
     vision_backbone: str = "resnet18"
-    # crop_shape: tuple[int, int] | None = (84, 84)
     crop_shape: tuple[int, int] | None = (420, 620)
     crop_is_random: bool = True
     pretrained_backbone_weights: str | None = None
