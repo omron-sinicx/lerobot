@@ -187,8 +187,8 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         batch = self.normalize_targets(batch)
         batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
         batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"]  # needs to be changed
-        loss = self.diffusion.compute_loss(batch)
-        return {"loss": loss}
+        loss, loss_l1 = self.diffusion.compute_loss(batch)
+        return {"loss": loss, "loss_l1": loss_l1}
 
 
 def _make_noise_scheduler(name: str, **kwargs: dict) -> DDPMScheduler | DDIMScheduler:
@@ -390,6 +390,8 @@ class DiffusionModel(nn.Module):
             raise ValueError(f"Unsupported prediction type {self.config.prediction_type}")
 
         loss = F.mse_loss(pred, target, reduction="none")
+        # For reference only, not used for training
+        loss_l1 = F.l1_loss(pred, batch["action"], reduction="none")
 
         # Mask loss wherever the action is padded with copies (edges of the dataset trajectory).
         if self.config.do_mask_loss_for_padding:
@@ -400,8 +402,9 @@ class DiffusionModel(nn.Module):
                 )
             in_episode_bound = ~batch["action_is_pad"]
             loss = loss * in_episode_bound.unsqueeze(-1)
+            loss_l1 = loss_l1 * in_episode_bound.unsqueeze(-1)
 
-        return loss.mean()
+        return loss.mean(), loss_l1.mean()
 
 
 class SpatialSoftmax(nn.Module):
