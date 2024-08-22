@@ -35,7 +35,7 @@ from huggingface_hub import PyTorchModelHubMixin
 from diffusers import DPMSolverMultistepScheduler
 from torch import Tensor, nn
 
-import logging 
+import logging
 import timeit
 
 from lerobot.common.policies.diffusion.configuration_force_diffusion import ForceDiffusionConfig
@@ -56,12 +56,14 @@ class ModuleAttrMixin(nn.Module):
     @property
     def device(self):
         return next(iter(self.parameters())).device
-    
+
     @property
     def dtype(self):
         return next(iter(self.parameters())).dtype
 
+
 logger = logging.getLogger(__name__)
+
 
 class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
     """
@@ -106,20 +108,20 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
 
         self.other_obs = [k for k in config.input_shapes if not k.startswith("observation.image")]
 
-        self.output_keys = [k for k in config.output_shapes if k.startswith("action")] # to be implemented to take handle multiple outputs 
+        self.output_keys = [k for k in config.output_shapes if k.startswith("action")]  # to be implemented to take handle multiple outputs
         self.output_sizes = [config.output_shapes[action][0] for action in config.output_shapes if action.startswith("action")]
 
         self.reset()
-    
+
     def get_optimizer_parameters(self):
-        
-        assert(self.config.model == "TRANSFORMER")
+
+        assert (self.config.model == "TRANSFORMER")
         optimizer_parameters = self.diffusion.unet.get_optim_groups()
         optimizer_parameters.append({
             "params": self.diffusion.rgb_encoder.parameters(),
             "weight_decay": float(0.001)
         })
-        
+
         return self.diffusion.unet.get_optim_groups()
 
     def reset(self):
@@ -164,8 +166,8 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
             actions = self.diffusion.generate_actions(batch)
 
             # TODO(rcadene): make above methods return output dictionary?
-            #seperate the action outputs into seperate entites
-            action_list = torch.split(actions, split_size_or_sections= self.output_sizes, dim=-1) 
+            # seperate the action outputs into seperate entites
+            action_list = torch.split(actions, split_size_or_sections=self.output_sizes, dim=-1)
 
             actions = self.unnormalize_outputs(dict(zip(self.output_keys, action_list)))
             # print(f"the unnormalized actions list is {actions.keys()}")
@@ -182,10 +184,10 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         batch = self.normalize_inputs(batch)
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
         batch["observation.state"] = torch.cat([batch[k] for k in self.other_obs], dim=-1)
-        #concatenate the actions here 
+        # concatenate the actions here
         batch = self.normalize_targets(batch)
         batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
-        batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"] #needs to be changed
+        batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"]  # needs to be changed
         loss = self.diffusion.compute_loss(batch)
         return {"loss": loss}
 
@@ -214,16 +216,16 @@ class DiffusionModel(nn.Module):
         # Get the keys that do not start with "observation.image"
         other_obs_keys = [k for k in config.input_shapes if not k.startswith("observation.image")]
 
-        #get the keys for the action
+        # get the keys for the action
         output_keys = [k for k in config.output_shapes if k.startswith("action")]
         output_sizes = [config.output_shapes[action][0] for action in config.output_shapes if action.startswith("action")]
         self.output_sum = sum(output_sizes)
 
         # Sum the first dimension of the shapes of these keys
-        state_shape = sum(config.input_shapes[key][0] for key in other_obs_keys) # add to another later 
+        state_shape = sum(config.input_shapes[key][0] for key in other_obs_keys)  # add to another later
 
         global_cond_dim = state_shape + self.rgb_encoder.feature_dim * num_images
-        
+
         if self.config.model == "FILM":
             self.unet = DiffusionConditionalUnet1d(
                 config,
@@ -234,20 +236,20 @@ class DiffusionModel(nn.Module):
             )
         elif self.config.model == "TRANSFORMER":
             self.unet = DiffusionTransformer(
-                input_dim = self.output_sum, #replace with output sum
-                output_dim = self.output_sum, # replace with output sum 
-                horizon = config.horizon,
-                n_obs_steps = config.n_obs_steps,
-                cond_dim = global_cond_dim , # image + obs take from resnet global dim
-                n_layer  = config.n_layer,
-                n_head   = config.n_head,
-                n_emb    = config.n_emb,
-                p_drop_emb = 0.0,
-                p_drop_attn = 0.01,
-                causal_attn = config.casual_attn, 
-                time_as_cond = config.obs_as_cond, 
-                obs_as_cond = config.obs_as_cond, 
-                n_cond_layers = config.n_cond_layers
+                input_dim=self.output_sum,  # replace with output sum
+                output_dim=self.output_sum,  # replace with output sum
+                horizon=config.horizon,
+                n_obs_steps=config.n_obs_steps,
+                cond_dim=global_cond_dim,  # image + obs take from resnet global dim
+                n_layer=config.n_layer,
+                n_head=config.n_head,
+                n_emb=config.n_emb,
+                p_drop_emb=0.0,
+                p_drop_attn=0.01,
+                causal_attn=config.casual_attn,
+                time_as_cond=config.obs_as_cond,
+                obs_as_cond=config.obs_as_cond,
+                n_cond_layers=config.n_cond_layers
             )
 
 
@@ -307,15 +309,15 @@ class DiffusionModel(nn.Module):
         # dim (effectively concatenating the camera features).
         img_features = einops.rearrange(
             img_features, "(b s n) ... -> b s (n ...)", b=batch_size, s=n_obs_steps
-        ) #img_feature shape is config.softmax * 2 * num_cameras
+        )  # img_feature shape is config.softmax * 2 * num_cameras
 
         # Concatenate state and image features then flatten to (B, global_cond_dim) incase of transformer it would be (B, T, global_cond_dim)
         if self.config.model == "FILM":
             output = torch.cat([batch["observation.state"], img_features], dim=-1).flatten(start_dim=1)
         elif self.config.model == "TRANSFORMER":
-            output = torch.cat([batch["observation.state"], img_features], dim=-1) # u add the state to the end of the image feature [B, To, sp*num_cam + statedim]
+            output = torch.cat([batch["observation.state"], img_features], dim=-1)  # u add the state to the end of the image feature [B, To, sp*num_cam + statedim]
 
-        return output 
+        return output
 
     def generate_actions(self, batch: dict[str, Tensor]) -> Tensor:
         """
@@ -354,7 +356,7 @@ class DiffusionModel(nn.Module):
         }
         """
         # Input validation.
-        assert set(batch).issuperset({"observation.state", "observation.images", "action", "action_is_pad"}) # needs to be changed 
+        assert set(batch).issuperset({"observation.state", "observation.images", "action", "action_is_pad"})  # needs to be changed
         n_obs_steps = batch["observation.state"].shape[1]
         horizon = batch["action"].shape[1]
         assert horizon == self.config.horizon
@@ -794,7 +796,7 @@ class DiffusionConditionalResidualBlock1d(nn.Module):
         if self.use_film_scale_modulation:
             # Treat the embedding as a list of scales and biases.
             scale = cond_embed[:, : self.out_channels]
-            bias = cond_embed[:, self.out_channels :]
+            bias = cond_embed[:, self.out_channels:]
             out = scale * out + bias
         else:
             # Treat the embedding as biases.
@@ -807,29 +809,29 @@ class DiffusionConditionalResidualBlock1d(nn.Module):
 
 class DiffusionTransformer(ModuleAttrMixin):
     def __init__(self,
-            input_dim: int, #action dim 
-            output_dim: int, # action dim equal to input 
-            horizon: int, # T 16
-            n_obs_steps: int, # Ta
-            cond_dim: int, # image + obs take from resnet global dim 
-            n_layer: int,
-            n_head: int,
-            n_emb: int,
-            p_drop_emb: float,
-            p_drop_attn: float,
-            causal_attn: bool, # masking of subsequent actions i think
-            time_as_cond: bool, # check what it does and if its already done in lerobot pre entering the model 
-            obs_as_cond: bool, # I think true?
-            n_cond_layers: int # need to check
-        ) -> None:
+                 input_dim: int,  # action dim
+                 output_dim: int,  # action dim equal to input
+                 horizon: int,  # T 16
+                 n_obs_steps: int,  # Ta
+                 cond_dim: int,  # image + obs take from resnet global dim
+                 n_layer: int,
+                 n_head: int,
+                 n_emb: int,
+                 p_drop_emb: float,
+                 p_drop_attn: float,
+                 causal_attn: bool,  # masking of subsequent actions i think
+                 time_as_cond: bool,  # check what it does and if its already done in lerobot pre entering the model
+                 obs_as_cond: bool,  # I think true?
+                 n_cond_layers: int  # need to check
+                 ) -> None:
         super().__init__()
 
         # compute number of tokens for main trunk and condition encoder
         if n_obs_steps is None:
             n_obs_steps = horizon
-        
+
         T = horizon
-        T_cond = 1 # i don't understand this increase to the sequence / they remove later for conditioning 
+        T_cond = 1  # i don't understand this increase to the sequence / they remove later for conditioning
         if not time_as_cond:
             T += 1
             T_cond -= 1
@@ -840,15 +842,15 @@ class DiffusionTransformer(ModuleAttrMixin):
 
         # input embedding stem
         self.input_emb = nn.Linear(input_dim, n_emb)
-        self.pos_emb = nn.Parameter(torch.zeros(1, T, n_emb)) # dont know what it does 
+        self.pos_emb = nn.Parameter(torch.zeros(1, T, n_emb))  # dont know what it does
         self.drop = nn.Dropout(p_drop_emb)
 
         # cond encoder
         self.time_emb = DiffusionSinusoidalPosEmb(n_emb)
         self.cond_obs_emb = None
-        
+
         if obs_as_cond:
-            self.cond_obs_emb = nn.Linear(cond_dim, n_emb) 
+            self.cond_obs_emb = nn.Linear(cond_dim, n_emb)
 
         self.cond_pos_emb = None
         self.encoder = None
@@ -856,7 +858,7 @@ class DiffusionTransformer(ModuleAttrMixin):
         encoder_only = False
         if T_cond > 0:
             self.cond_pos_emb = nn.Parameter(torch.zeros(1, T_cond, n_emb))
-            if n_cond_layers > 0: # I assume it will always be bigger ? here self attention is for the condition? 
+            if n_cond_layers > 0:  # I assume it will always be bigger ? here self attention is for the condition?
                 encoder_layer = nn.TransformerEncoderLayer(
                     d_model=n_emb,
                     nhead=n_head,
@@ -884,7 +886,7 @@ class DiffusionTransformer(ModuleAttrMixin):
                 dropout=p_drop_attn,
                 activation='gelu',
                 batch_first=True,
-                norm_first=True # important for stability
+                norm_first=True  # important for stability
             )
             self.decoder = nn.TransformerDecoder(
                 decoder_layer=decoder_layer,
@@ -917,7 +919,7 @@ class DiffusionTransformer(ModuleAttrMixin):
             mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
             mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
             self.register_buffer("mask", mask)
-            
+
             if time_as_cond and obs_as_cond:
                 S = T_cond
                 t, s = torch.meshgrid(
@@ -925,7 +927,7 @@ class DiffusionTransformer(ModuleAttrMixin):
                     torch.arange(S),
                     indexing='ij'
                 )
-                mask = t >= (s-1) # add one dimension since time is the first token in cond
+                mask = t >= (s-1)  # add one dimension since time is the first token in cond
                 mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
                 self.register_buffer('memory_mask', mask)
             else:
@@ -937,7 +939,7 @@ class DiffusionTransformer(ModuleAttrMixin):
         # decoder head
         self.ln_f = nn.LayerNorm(n_emb)
         self.head = nn.Linear(n_emb, output_dim)
-            
+
         # constants
         self.T = T
         self.T_cond = T_cond
@@ -953,15 +955,15 @@ class DiffusionTransformer(ModuleAttrMixin):
         )
 
     def _init_weights(self, module):
-        ignore_types = (nn.Dropout, 
-            DiffusionSinusoidalPosEmb, 
-            nn.TransformerEncoderLayer, 
-            nn.TransformerDecoderLayer,
-            nn.TransformerEncoder,
-            nn.TransformerDecoder,
-            nn.ModuleList,
-            nn.Mish,
-            nn.Sequential)
+        ignore_types = (nn.Dropout,
+                        DiffusionSinusoidalPosEmb,
+                        nn.TransformerEncoderLayer,
+                        nn.TransformerDecoderLayer,
+                        nn.TransformerEncoder,
+                        nn.TransformerDecoder,
+                        nn.ModuleList,
+                        nn.Mish,
+                        nn.Sequential)
         if isinstance(module, (nn.Linear, nn.Embedding)):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if isinstance(module, nn.Linear) and module.bias is not None:
@@ -973,7 +975,7 @@ class DiffusionTransformer(ModuleAttrMixin):
                 weight = getattr(module, name)
                 if weight is not None:
                     torch.nn.init.normal_(weight, mean=0.0, std=0.02)
-            
+
             bias_names = ['in_proj_bias', 'bias_k', 'bias_v']
             for name in bias_names:
                 bias = getattr(module, name)
@@ -991,8 +993,8 @@ class DiffusionTransformer(ModuleAttrMixin):
             pass
         else:
             raise RuntimeError("Unaccounted module {}".format(module))
-    
-    def get_optim_groups(self, weight_decay: float=1e-3):
+
+    def get_optim_groups(self, weight_decay: float = 1e-3):
         """
         This long function is unfortunately doing something very simple and is being very defensive:
         We are separating out all parameters of the model into two buckets: those that will experience
@@ -1054,21 +1056,20 @@ class DiffusionTransformer(ModuleAttrMixin):
         ]
         return optim_groups
 
-
-    def configure_optimizers(self, 
-            learning_rate: float=1e-4, 
-            weight_decay: float=1e-3,
-            betas: Tuple[float, float]=(0.9,0.95)):
+    def configure_optimizers(self,
+                             learning_rate: float = 1e-4,
+                             weight_decay: float = 1e-3,
+                             betas: Tuple[float, float] = (0.9, 0.95)):
         optim_groups = self.get_optim_groups(weight_decay=weight_decay)
         optimizer = torch.optim.AdamW(
             optim_groups, lr=learning_rate, betas=betas
         )
         return optimizer
 
-    def forward(self, 
-        sample: torch.Tensor, 
-        timestep: Union[torch.Tensor, float, int], 
-        global_cond: Optional[torch.Tensor]=None, **kwargs):
+    def forward(self,
+                sample: torch.Tensor,
+                timestep: Union[torch.Tensor, float, int],
+                global_cond: Optional[torch.Tensor] = None, **kwargs):
         """
         x: (B,T,input_dim)
         timestep: (B,) or int, diffusion step
@@ -1101,7 +1102,7 @@ class DiffusionTransformer(ModuleAttrMixin):
             # (B,T+1,n_emb)
             x = self.encoder(src=x, mask=self.mask)
             # (B,T+1,n_emb)
-            x = x[:,1:,:]
+            x = x[:, 1:, :]
             # (B,T,n_emb)
         else:
             # encoder
@@ -1118,7 +1119,7 @@ class DiffusionTransformer(ModuleAttrMixin):
             x = self.encoder(x)
             memory = x
             # (B,T_cond,n_emb)
-            
+
             # decoder
             token_embeddings = input_emb
             t = token_embeddings.shape[1]
@@ -1134,7 +1135,7 @@ class DiffusionTransformer(ModuleAttrMixin):
                 memory_mask=self.memory_mask
             )
             # (B,T,n_emb)
-        
+
         # head
         x = self.ln_f(x)
         x = self.head(x)
