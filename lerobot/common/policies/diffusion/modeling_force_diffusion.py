@@ -177,6 +177,8 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
             self._queues["action"].extend(actions.transpose(0, 1))
 
         action = self._queues["action"].popleft()
+        #TODO(Malek): seperate the actions again here 
+        action = dict(zip(self.output_keys, torch.split(action, self.output_sizes, dim=-1)))
         return action
 
     def forward(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
@@ -187,6 +189,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         # concatenate the actions here
         batch = self.normalize_targets(batch)
         batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
+        #TODO(Malek): make sure the thing below is always accurate
         batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"]  # needs to be changed
         loss, loss_l1 = self.diffusion.compute_loss(batch)
         return {"loss": loss, "loss_l1": loss_l1}
