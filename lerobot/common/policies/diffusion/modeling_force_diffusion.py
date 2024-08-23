@@ -191,6 +191,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
         #TODO(Malek): make sure the thing below is always accurate
         batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"]  # needs to be changed
+        
         loss, loss_l1 = self.diffusion.compute_loss(batch)
         return {"loss": loss, "loss_l1": loss_l1}
 
@@ -396,7 +397,7 @@ class DiffusionModel(nn.Module):
 
         loss = F.mse_loss(pred, target, reduction="none")
         # For reference only, not used for training
-        loss_l1 = F.l1_loss(pred, batch["action"], reduction="none")
+        loss_l1 = F.l1_loss(pred, target, reduction="none")
 
         # Mask loss wherever the action is padded with copies (edges of the dataset trajectory).
         if self.config.do_mask_loss_for_padding:
