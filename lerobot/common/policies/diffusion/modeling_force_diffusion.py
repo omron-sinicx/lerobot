@@ -111,7 +111,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
 
         # Check that all the keys are defined for normalization
         assert set(config.input_shapes).issuperset({*self.input_keys})
-        assert set(config.output_shapes).issuperset({*config.keys_order[self.output_keys]})
+        assert set(config.output_shapes).issuperset({*self.output_keys})
 
         self.output_sizes = [config.output_shapes[action][0] for action in self.output_keys]
 
