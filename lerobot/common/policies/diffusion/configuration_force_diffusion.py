@@ -98,6 +98,13 @@ class ForceDiffusionConfig:
     horizon: int = 16
     n_action_steps: int = 8
 
+    keys_order: dict[str, list[str]] = field(
+        default_factory=lambda: {
+            "action": ['action'],
+            "state": ['observation.state']
+        }
+    )
+
     input_shapes: dict[str, list[int]] = field(
         default_factory=lambda: {
             "observation.image": [3, 480, 640],
@@ -129,14 +136,14 @@ class ForceDiffusionConfig:
     pretrained_backbone_weights: str | None = None
     use_group_norm: bool = True
     spatial_softmax_num_keypoints: int = 32
-    
+
     # Unet / FILM
     down_dims: tuple[int, ...] = (512, 1024, 2048)
     kernel_size: int = 5
     n_groups: int = 8
     diffusion_step_embed_dim: int = 128
     use_film_scale_modulation: bool = True
-    
+
     # Noise scheduler.
     noise_scheduler_type: str = "DDIM"
     num_train_timesteps: int = 30
@@ -147,7 +154,7 @@ class ForceDiffusionConfig:
     clip_sample: bool = True
     clip_sample_range: float = 1.0
 
-    #Transformer 
+    # Transformer
     n_layer: int = 8
     n_head: int = 4
     n_emb: int = 768
