@@ -113,7 +113,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         assert set(config.input_shapes).issuperset({*self.input_keys})
         assert set(config.output_shapes).issuperset({*config.keys_order[self.output_keys]})
 
-        self.output_sizes = [config.output_shapes[action][0] for action in config.output_shapes]
+        self.output_sizes = [config.output_shapes[action][0] for action in self.output_keys]
 
         self.reset()
 
