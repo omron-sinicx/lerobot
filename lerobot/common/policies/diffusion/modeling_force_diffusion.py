@@ -106,10 +106,14 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
 
         self.expected_image_keys = [k for k in config.input_shapes if k.startswith("observation.image")]
 
-        self.other_obs = [k for k in config.input_shapes if not k.startswith("observation.image")]
+        self.input_keys = config.keys_order['state']
+        self.output_keys = config.keys_order['action']
 
-        self.output_keys = [k for k in config.output_shapes if k.startswith("action")]  # to be implemented to take handle multiple outputs
-        self.output_sizes = [config.output_shapes[action][0] for action in config.output_shapes if action.startswith("action")]
+        # Check that all the keys are defined for normalization
+        assert set(config.input_shapes).issuperset({*self.input_keys})
+        assert set(config.output_shapes).issuperset({*config.keys_order[self.output_keys]})
+
+        self.output_sizes = [config.output_shapes[action][0] for action in config.output_shapes]
 
         self.reset()
 
@@ -156,7 +160,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         """
         batch = self.normalize_inputs(batch)
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
-        batch["observation.state"] = torch.cat([batch[k] for k in self.other_obs], dim=-1)
+        batch["observation.state"] = torch.cat([batch[k] for k in self.input_keys], dim=-1)
         # Note: It's important that this happens after stacking the images into a single key.
         self._queues = populate_queues(self._queues, batch)
 
@@ -177,7 +181,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
             self._queues["action"].extend(actions.transpose(0, 1))
 
         action = self._queues["action"].popleft()
-        #TODO(Malek): seperate the actions again here 
+        # TODO(Malek): seperate the actions again here
         action = dict(zip(self.output_keys, torch.split(action, self.output_sizes, dim=-1)))
         return action
 
@@ -185,11 +189,11 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         """Run the batch through the model and compute the loss for training or validation."""
         batch = self.normalize_inputs(batch)
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
-        batch["observation.state"] = torch.cat([batch[k] for k in self.other_obs], dim=-1)
+        batch["observation.state"] = torch.cat([batch[k] for k in self.input_keys], dim=-1)
         # concatenate the actions here
         batch = self.normalize_targets(batch)
         batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
-        #TODO(Malek): make sure the thing below is always accurate
+        # TODO(Malek): make sure the thing below is always accurate
         batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"]  # needs to be changed
         
         loss, loss_l1 = self.diffusion.compute_loss(batch)
