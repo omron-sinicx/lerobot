@@ -195,7 +195,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         batch["action"] = torch.cat([batch[k] for k in self.output_keys], dim=-1)
         # TODO(Malek): make sure the thing below is always accurate
         batch["action_is_pad"] = batch[self.output_keys[0] + "_is_pad"]  # needs to be changed
-        
+
         loss, loss_l1 = self.diffusion.compute_loss(batch)
         return {"loss": loss, "loss_l1": loss_l1}
 
@@ -221,16 +221,12 @@ class DiffusionModel(nn.Module):
         self.rgb_encoder = DiffusionRgbEncoder(config)
         num_images = len([k for k in config.input_shapes if k.startswith("observation.image")])
 
-        # Get the keys that do not start with "observation.image"
-        other_obs_keys = [k for k in config.input_shapes if not k.startswith("observation.image")]
-
         # get the keys for the action
-        output_keys = [k for k in config.output_shapes if k.startswith("action")]
-        output_sizes = [config.output_shapes[action][0] for action in config.output_shapes if action.startswith("action")]
+        output_sizes = [config.output_shapes[action][0] for action in config.keys_order['action']]
         self.output_sum = sum(output_sizes)
 
         # Sum the first dimension of the shapes of these keys
-        state_shape = sum(config.input_shapes[key][0] for key in other_obs_keys)  # add to another later
+        state_shape = sum(config.input_shapes[key][0] for key in config.keys_order['state'])  # add to another later
 
         global_cond_dim = state_shape + self.rgb_encoder.feature_dim * num_images
 
