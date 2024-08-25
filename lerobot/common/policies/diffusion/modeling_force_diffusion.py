@@ -104,10 +104,9 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
 
         self.diffusion = DiffusionModel(config)
 
-        self.expected_image_keys = [k for k in config.input_shapes if k.startswith("observation.image")]
-
         self.input_keys = config.keys_order['state']
         self.output_keys = config.keys_order['action']
+        self.expected_image_keys = config.keys_order['image']
 
         # Check that all the keys are defined for normalization
         assert set(config.input_shapes).issuperset({*self.input_keys})
@@ -219,10 +218,10 @@ class DiffusionModel(nn.Module):
         self.config = config
 
         self.rgb_encoder = DiffusionRgbEncoder(config)
-        num_images = len([k for k in config.input_shapes if k.startswith("observation.image")])
+        num_images = len([k for k in config.keys_order["image"]])
 
         # get the keys for the action
-        output_sizes = [config.output_shapes[action][0] for action in config.keys_order['action']]
+        output_sizes = [config.output_shapes[action][0] for action in config.keys_order["action"]]
         self.output_sum = sum(output_sizes)
 
         # Sum the first dimension of the shapes of these keys
@@ -233,6 +232,7 @@ class DiffusionModel(nn.Module):
         if self.config.model == "FILM":
             self.unet = DiffusionConditionalUnet1d(
                 config,
+                self.output_sum,
                 global_cond_dim=(
                     state_shape + self.rgb_encoder.feature_dim * num_images
                 )
@@ -527,7 +527,7 @@ class DiffusionRgbEncoder(nn.Module):
         # The dummy input should take the number of image channels from `config.input_shapes` and it should
         # use the height and width from `config.crop_shape` if it is provided, otherwise it should use the
         # height and width from `config.input_shapes`.
-        image_keys = [k for k in config.input_shapes if k.startswith("observation.image")]
+        image_keys = [k for k in config.keys_order["image"]]
         # Note: we have a check in the config class to make sure all images have the same shape.
         image_key = image_keys[0]
         dummy_input_h_w = (
@@ -635,7 +635,7 @@ class DiffusionConditionalUnet1d(nn.Module):
     Note: this removes local conditioning as compared to the original diffusion policy code.
     """
 
-    def __init__(self, config: ForceDiffusionConfig, global_cond_dim: int):
+    def __init__(self, config: ForceDiffusionConfig, outputsum: int ,global_cond_dim: int):
         super().__init__()
 
         self.config = config
@@ -653,7 +653,7 @@ class DiffusionConditionalUnet1d(nn.Module):
 
         # In channels / out channels for each downsampling block in the Unet's encoder. For the decoder, we
         # just reverse these.
-        in_out = [(config.output_shapes["action"][0], config.down_dims[0])] + list(
+        in_out = [(outputsum, config.down_dims[0])] + list(
             zip(config.down_dims[:-1], config.down_dims[1:], strict=True)
         )
 
@@ -708,7 +708,7 @@ class DiffusionConditionalUnet1d(nn.Module):
 
         self.final_conv = nn.Sequential(
             DiffusionConv1dBlock(config.down_dims[0], config.down_dims[0], kernel_size=config.kernel_size),
-            nn.Conv1d(config.down_dims[0], config.output_shapes["action"][0], 1),
+            nn.Conv1d(config.down_dims[0], outputsum, 1),
         )
 
     def forward(self, x: Tensor, timestep: Tensor | int, global_cond=None) -> Tensor:
