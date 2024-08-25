@@ -39,6 +39,7 @@ from lerobot.common.datasets.utils import (
     hf_transform_to_torch,
 )
 from lerobot.common.datasets.video_utils import VideoFrame, encode_video_frames
+from ur_control.transformations import axis_angle_from_quaternion, quaternion_from_axis_angle
 
 
 def get_cameras(hdf5_data):
@@ -76,6 +77,10 @@ def check_format(raw_dir) -> bool:
                     assert c < h and c < w, f"Expect (h,w,c) image format but ({h=},{w=},{c=}) provided."
 
 
+def axis_angle_conversion(axis_angle):
+    return axis_angle_from_quaternion(quaternion_from_axis_angle(axis_angle))
+
+
 def load_from_raw(
     raw_dir: Path,
     videos_dir: Path,
@@ -104,6 +109,11 @@ def load_from_raw(
             done[-1] = True
 
             action = torch.from_numpy(ep["/action"][:])
+            if "action_cholesky_ortho6" in ep:
+                action_cholesky_ortho6 = torch.from_numpy(ep["action_cholesky_ortho6"][:])
+            if "action_diag_ortho6" in ep:
+                action_diag_ortho6 = torch.from_numpy(ep["action_diag_ortho6"][:])
+
             if "/observations/qvel" in ep:
                 qpos = torch.from_numpy(ep["/observations/qpos"][:])
             if "/observations/qvel" in ep:
@@ -116,6 +126,8 @@ def load_from_raw(
                 eef_pos = torch.from_numpy(ep["/observations/eef_pos"][:])
             if "/observations/eef_vel" in ep:
                 eef_vel = torch.from_numpy(ep["/observations/eef_vel"][:])
+            if "/observations/eef_pos_ortho6" in ep:
+                eef_pos_ortho6 = torch.from_numpy(ep["/observations/eef_pos_ortho6"][:])
 
             state = torch.hstack((eef_pos, ft))
 
@@ -183,7 +195,11 @@ def load_from_raw(
                 ep_dict["observation.eef_pos"] = eef_pos
             if "/observations/eef_vel" in ep:
                 ep_dict["observation.eef_vel"] = eef_vel
+            if "/observations/eef_pos_ortho6" in ep:
+                ep_dict["observation.eef_pos_ortho6"] = eef_pos_ortho6
             ep_dict["action"] = action
+            ep_dict["action_cholesky_ortho6"] = action_cholesky_ortho6
+            ep_dict["action_diag_ortho6"] = action_diag_ortho6
             ep_dict["episode_index"] = torch.tensor([ep_idx] * num_frames)
             ep_dict["frame_index"] = torch.arange(0, num_frames, 1)
             ep_dict["timestamp"] = torch.arange(0, num_frames, 1) / fps
@@ -250,9 +266,21 @@ def to_hf_dataset(data_dict, video) -> Dataset:
         features["observation.eef_vel"] = Sequence(
             length=data_dict["observation.eef_vel"].shape[1], feature=Value(dtype="float32", id=None)
         )
+    if "observation.eef_pos_ortho6" in data_dict:
+        features["observation.eef_pos_ortho6"] = Sequence(
+            length=data_dict["observation.eef_pos_ortho6"].shape[1], feature=Value(dtype="float32", id=None)
+        )
     features["action"] = Sequence(
         length=data_dict["action"].shape[1], feature=Value(dtype="float32", id=None)
     )
+    if "action_cholesky_ortho6" in data_dict:
+        features["action_cholesky_ortho6"] = Sequence(
+            length=data_dict["action_cholesky_ortho6"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "action_diag_ortho6" in data_dict:
+        features["action_diag_ortho6"] = Sequence(
+            length=data_dict["action_diag_ortho6"].shape[1], feature=Value(dtype="float32", id=None)
+        )
     features["episode_index"] = Value(dtype="int64", id=None)
     features["frame_index"] = Value(dtype="int64", id=None)
     features["timestamp"] = Value(dtype="float32", id=None)
