@@ -296,13 +296,13 @@ def main():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=32,
+        default=8,
         help="Batch size loaded by DataLoader for computing the dataset statistics.",
     )
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=8,
+        default=4,
         help="Number of processes of Dataloader for computing the dataset statistics.",
     )
     parser.add_argument(
