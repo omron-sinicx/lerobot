@@ -21,6 +21,7 @@ subclass a base class.
 The protocol structure, method signatures, and docstrings should be used by developers as a reference for
 how to implement new policies.
 """
+from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
