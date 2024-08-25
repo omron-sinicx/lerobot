@@ -19,6 +19,7 @@
 TODO(alexander-soare):
   - Remove reliance on diffusers for DDPMScheduler and LR scheduler.
 """
+from __future__ import annotations
 
 import math
 from collections import deque
@@ -734,7 +735,7 @@ class DiffusionConditionalResidualBlock1d(nn.Module):
         if self.use_film_scale_modulation:
             # Treat the embedding as a list of scales and biases.
             scale = cond_embed[:, : self.out_channels]
-            bias = cond_embed[:, self.out_channels :]
+            bias = cond_embed[:, self.out_channels:]
             out = scale * out + bias
         else:
             # Treat the embedding as biases.

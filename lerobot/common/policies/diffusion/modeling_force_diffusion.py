@@ -19,6 +19,7 @@
 TODO(alexander-soare):
   - Remove reliance on diffusers for DDPMScheduler and LR scheduler.
 """
+from __future__ import annotations
 
 import math
 from collections import deque

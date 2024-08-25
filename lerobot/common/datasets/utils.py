@@ -13,10 +13,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
+
 import json
 import re
 import warnings
-from functools import cache
+from functools import lru_cache  # cache
 from pathlib import Path
 from typing import Dict
 
@@ -82,7 +84,7 @@ def hf_transform_to_torch(items_dict: dict[torch.Tensor | None]):
     return items_dict
 
 
-@cache
+@lru_cache
 def get_hf_dataset_safe_version(repo_id: str, version: str) -> str:
     api = HfApi()
     dataset_info = api.list_repo_refs(repo_id, repo_type="dataset")
