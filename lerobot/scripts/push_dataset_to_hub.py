@@ -41,6 +41,7 @@ python lerobot/scripts/push_dataset_to_hub.py \
 --repo-id lerobot/umi_cup_in_the_wild
 ```
 """
+from __future__ import annotations
 
 import argparse
 import json
