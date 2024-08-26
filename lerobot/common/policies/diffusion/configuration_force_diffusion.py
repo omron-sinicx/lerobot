@@ -136,6 +136,8 @@ class ForceDiffusionConfig:
     pretrained_backbone_weights: str | None = None
     use_group_norm: bool = True
     spatial_softmax_num_keypoints: int = 32
+    temporal_ensemble_coeff: float | None = None
+
 
     # Unet / FILM
     down_dims: tuple[int, ...] = (512, 1024, 2048)
