@@ -139,6 +139,8 @@ class ForceDiffusionConfig:
     spatial_softmax_num_keypoints: int = 32
     temporal_ensemble_coeff: float | None = None
 
+    collect_denoised_sequence: bool = False
+
     # Unet / FILM
     down_dims: tuple[int, ...] = (512, 1024, 2048)
     kernel_size: int = 5
