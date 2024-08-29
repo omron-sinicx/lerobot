@@ -182,7 +182,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         if len(self._queues["action"]) == 0:
             # stack n latest observations from the queue
             batch = {k: torch.stack(list(self._queues[k]), dim=1) for k in batch if k in self._queues}
-            actions = self.diffusion.generate_actions(batch)
+            actions, denoised_sequence = self.diffusion.generate_actions(batch)
 
             if self.config.temporal_ensemble_coeff is not None:
                 actions = actions[:, start: ]
@@ -193,11 +193,20 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
 
             # TODO(rcadene): make above methods return output dictionary?
             # seperate the action outputs into seperate entites
-            action_list = torch.split(actions, split_size_or_sections=self.output_sizes, dim=-1)
+            # Process and unnormalize denoised sequence if required.
+            if self.config.collect_denoised_sequence:
+                denoising_action_sequence = {
+                    key: [
+                        self.unnormalize_outputs({key: act[:, start:end]})[key]
+                        for act in torch.split(denoised_sequence, self.output_sizes, dim=-1)
+                    ]
+                    for key in self.output_keys
+                }
 
+
+            action_list = torch.split(actions, split_size_or_sections=self.output_sizes, dim=-1)
             actions = self.unnormalize_outputs(dict(zip(self.output_keys, action_list)))
             # print(f"the unnormalized actions list is {actions.keys()}")
-
             actions = torch.cat([actions[k] for k in self.output_keys], dim=-1)
 
             self._queues["action"].extend(actions.transpose(0, 1)) 
@@ -205,7 +214,8 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         action = self._queues["action"].popleft()
         # TODO(Malek): seperate the actions again here
         action = dict(zip(self.output_keys, torch.split(action, self.output_sizes, dim=-1)))
-        return action
+
+        return (action, denoising_action_sequence) if self.config.collect_denoised_sequence else action
       
 
     def forward(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
@@ -328,7 +338,7 @@ class DiffusionTemporalEnsembler:
         )
 
         return action
-
+    
 
 class DiffusionModel(nn.Module):
     def __init__(self, config: ForceDiffusionConfig):
@@ -406,6 +416,9 @@ class DiffusionModel(nn.Module):
             generator=generator,
         )
 
+        # for animation and debugging purposes
+        denoised_sequence = [] if self.config.collect_denoised_sequence else None
+
         self.noise_scheduler.set_timesteps(self.num_inference_steps)
 
         for t in self.noise_scheduler.timesteps:
@@ -417,8 +430,11 @@ class DiffusionModel(nn.Module):
             )
             # Compute previous image: x_t -> x_t-1
             sample = self.noise_scheduler.step(model_output, t, sample, generator=generator).prev_sample
+            
+            if denoised_sequence is not None:
+                denoised_sequence.append(sample)
 
-        return sample
+        return sample, denoised_sequence
 
     def _prepare_global_conditioning(self, batch: dict[str, Tensor]) -> Tensor:
         """Encode image features and concatenate them all together along with the state vector."""
@@ -457,7 +473,7 @@ class DiffusionModel(nn.Module):
 
         # run sampling
         start_time = timeit.default_timer()
-        actions = self.conditional_sample(batch_size, global_cond=global_cond)
+        actions, denoised_sequence = self.conditional_sample(batch_size, global_cond=global_cond)
         print(f"the time for computing actions {timeit.default_timer() - start_time}")
 
         # Extract `n_action_steps` steps worth of actions (from the current observation).
@@ -465,7 +481,7 @@ class DiffusionModel(nn.Module):
         # end = start + self.config.n_action_steps
         # actions = actions[:, start:end]
 
-        return actions
+        return actions, denoised_sequence
 
     def compute_loss(self, batch: dict[str, Tensor]) -> Tensor:
         """
