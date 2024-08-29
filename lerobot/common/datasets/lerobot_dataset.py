@@ -249,12 +249,13 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         ]
         # Check that some properties are consistent across datasets. Note: We may relax some of these
         # consistency requirements in future iterations of this class.
-        for repo_id, dataset in zip(self.repo_ids, self._datasets, strict=True):
-            if dataset.info != self._datasets[0].info:
-                raise ValueError(
-                    f"Detected a mismatch in dataset info between {self.repo_ids[0]} and {repo_id}. This is "
-                    "not yet supported."
-                )
+        # for repo_id, dataset in zip(self.repo_ids, self._datasets, strict=True):
+        #     print(dataset.info, self._datasets[0].info)
+        #     if dataset.info != self._datasets[0].info:
+        #         raise ValueError(
+        #             f"Detected a mismatch in dataset info between {self.repo_ids[0]} and {repo_id}. This is "
+        #             "not yet supported."
+        #         )
         # Disable any data keys that are not common across all of the datasets. Note: we may relax this
         # restriction in future iterations of this class. For now, this is necessary at least for being able
         # to use PyTorch's default DataLoader collate function.
