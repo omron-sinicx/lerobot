@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pprint
 import shutil
 import warnings
 from pathlib import Path
@@ -132,6 +133,41 @@ def push_videos_to_hub(repo_id: str, videos_dir: str | Path, revision: str | Non
     )
 
 
+def overwrite_stats_fn(stats):
+
+    # pprint.pprint(hf_stats)
+    if 'observation.eef_pos.rotation_ortho6/min':
+        print("observation.eef_pos.rotation_ortho6 BEFORE")
+        pprint.pprint(stats['observation.eef_pos.rotation_ortho6/min'])
+        pprint.pprint(stats['observation.eef_pos.rotation_ortho6/max'])
+    if 'observation.eef_pos.rotation_axis_angle/min' in stats:
+        pprint.pprint(stats['observation.eef_pos.rotation_axis_angle/min'])
+        pprint.pprint(stats['observation.eef_pos.rotation_axis_angle/max'])
+
+    bimanual = stats['observation.eef_pos.rotation_ortho6/min'].shape[0] > 6
+    # override stats for rotation
+    stats['observation.eef_pos.rotation_ortho6/min'][:6] = torch.ones(6) * -1
+    stats['observation.eef_pos.rotation_ortho6/max'][:6] = torch.ones(6)
+    stats['action.rotation_ortho6/min'][:6] = torch.ones(6) * -1
+    stats['action.rotation_ortho6/max'][:6] = torch.ones(6)
+    if 'observation.eef_pos.rotation_axis_angle/min' in stats:
+        stats['observation.eef_pos.rotation_axis_angle/min'][:3] = torch.ones(3) * torch.pi * -1
+        stats['observation.eef_pos.rotation_axis_angle/max'][:3] = torch.ones(3) * torch.pi
+    if bimanual:
+        stats['observation.eef_pos.rotation_ortho6/min'][6:] = torch.ones(6) * -1
+        stats['observation.eef_pos.rotation_ortho6/max'][6:] = torch.ones(6)
+        stats['action.rotation_ortho6/min'][6:] = torch.ones(6) * -1
+        stats['action.rotation_ortho6/max'][6:] = torch.ones(6)
+        if 'observation.eef_pos.rotation_axis_angle/min' in stats:
+            stats['observation.eef_pos.rotation_axis_angle/min'][3:] = torch.ones(3) * torch.pi * -1
+            stats['observation.eef_pos.rotation_axis_angle/max'][3:] = torch.ones(3) * torch.pi
+
+    print("observation.eef_pos.rotation_ortho6 AFTER")
+    pprint.pprint(stats['observation.eef_pos.rotation_ortho6/min'])
+    pprint.pprint(stats['observation.eef_pos.rotation_ortho6/max'])
+    return stats
+
+
 def push_dataset_to_hub(
     raw_dir: Path,
     raw_format: str,
@@ -148,6 +184,7 @@ def push_dataset_to_hub(
     cache_dir: Path = Path("/tmp"),
     tests_data_dir: Path | None = None,
     encoding: dict | None = None,
+    overwrite_stats: bool = False
 ):
     check_repo_id(repo_id)
     user_id, dataset_id = repo_id.split("/")
@@ -204,6 +241,8 @@ def push_dataset_to_hub(
         videos_dir=videos_dir,
     )
     stats = compute_stats(lerobot_dataset, batch_size, num_workers)
+    if overwrite_stats:
+        stats = overwrite_stats_fn(stats)
 
     if local_dir:
         hf_dataset = hf_dataset.with_format(None)  # to remove transforms that cant be saved
@@ -288,10 +327,15 @@ def main():
         help="Frame rate used to collect videos. If not provided, use the default one specified in the code.",
     )
     parser.add_argument(
-        "--video",
-        type=int,
+        "--overwrite-stats",
+        type=bool,
         default=1,
         help="Convert each episode of the raw dataset to an mp4 video. This option allows 60 times lower disk space consumption and 25 faster loading time during training.",
+    )
+    parser.add_argument(
+        "--video",
+        action='store_true',
+        help="Override the orientation min/max stats to a fixed range [-1, 1]",
     )
     parser.add_argument(
         "--batch-size",
