@@ -270,8 +270,8 @@ def push_dataset_to_hub(
         videos_dir=videos_dir,
     )
     stats = compute_stats(lerobot_dataset, batch_size, num_workers)
-    if overwrite_stats:
-        stats = overwrite_stats_fn(stats)
+    # if overwrite_stats:
+    #     stats = overwrite_stats_fn(stats)
 
     if local_dir:
         hf_dataset = hf_dataset.with_format(None)  # to remove transforms that cant be saved
@@ -357,14 +357,14 @@ def main():
     )
     parser.add_argument(
         "--overwrite-stats",
-        type=bool,
-        default=1,
-        help="Convert each episode of the raw dataset to an mp4 video. This option allows 60 times lower disk space consumption and 25 faster loading time during training.",
+        action='store_true',
+        help="Override the orientation min/max stats to a fixed range [-1, 1]",
     )
     parser.add_argument(
         "--video",
-        action='store_true',
-        help="Override the orientation min/max stats to a fixed range [-1, 1]",
+        type=int,
+        default=1,
+        help="Convert each episode of the raw dataset to an mp4 video. This option allows 60 times lower disk space consumption and 25 faster loading time during training.",
     )
     parser.add_argument(
         "--batch-size",

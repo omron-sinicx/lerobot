@@ -113,7 +113,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
         assert set(config.input_shapes).issuperset({*self.input_keys})
         assert set(config.output_shapes).issuperset({*self.output_keys})
 
-        #TODO(malek): clean this 
+        # TODO(malek): clean this
         self.output_sizes = [config.output_shapes[action][0] for action in self.output_keys]
 
         # self.max_blending_value = self.config.horizon - self.config.n_action_steps - self.config.n_obs_steps + 1
@@ -185,7 +185,7 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
             actions, denoised_sequence = self.diffusion.generate_actions(batch)
 
             if self.config.temporal_ensemble_coeff is not None:
-                actions = actions[:, start: ]
+                actions = actions[:, start:]
                 actions = self.temporal_ensembler.update(actions)
 
             else:
@@ -203,20 +203,22 @@ class DiffusionPolicy(nn.Module, PyTorchModelHubMixin):
                     for key in self.output_keys
                 }
 
-
             action_list = torch.split(actions, split_size_or_sections=self.output_sizes, dim=-1)
             actions = self.unnormalize_outputs(dict(zip(self.output_keys, action_list)))
             # print(f"the unnormalized actions list is {actions.keys()}")
             actions = torch.cat([actions[k] for k in self.output_keys], dim=-1)
 
-            self._queues["action"].extend(actions.transpose(0, 1)) 
+            self._queues["action"].extend(actions.transpose(0, 1))
+
+            if self.config.action_drop is not None: 
+                for i in range(self.config.action_drop):
+                    self._queues["action"].popleft()
 
         action = self._queues["action"].popleft()
         # TODO(Malek): seperate the actions again here
         action = dict(zip(self.output_keys, torch.split(action, self.output_sizes, dim=-1)))
 
         return (action, denoising_action_sequence) if self.config.collect_denoised_sequence else action
-      
 
     def forward(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
         """Run the batch through the model and compute the loss for training or validation."""
@@ -321,13 +323,13 @@ class DiffusionTemporalEnsembler:
             # self.ensembled_actions will have shape (batch_size, chunk_size - 1, action_dim). Compute
             # the online update for those entries.
             self.ensembled_actions *= self.ensemble_weights_cumsum[self.ensembled_actions_count - 1]
-            self.ensembled_actions += actions[:, :-self.n_action_steps] * self.ensemble_weights[self.ensembled_actions_count] # edited
+            self.ensembled_actions += actions[:, :-self.n_action_steps] * self.ensemble_weights[self.ensembled_actions_count]  # edited
             self.ensembled_actions /= self.ensemble_weights_cumsum[self.ensembled_actions_count]
             self.ensembled_actions_count = torch.clamp(self.ensembled_actions_count + 1, max=self.chunk_size)
             # The last action, which has no prior online average, needs to get concatenated onto the end.
-            self.ensembled_actions = torch.cat([self.ensembled_actions, actions[:, -self.n_action_steps:]], dim=1) # edited
+            self.ensembled_actions = torch.cat([self.ensembled_actions, actions[:, -self.n_action_steps:]], dim=1)  # edited
             self.ensembled_actions_count = torch.cat(
-                [self.ensembled_actions_count, torch.ones((self.n_action_steps, 1), dtype=torch.long, device=self.ensembled_actions.device)] # edited
+                [self.ensembled_actions_count, torch.ones((self.n_action_steps, 1), dtype=torch.long, device=self.ensembled_actions.device)]  # edited
             )
 
         # "Consume" the first action.
@@ -338,7 +340,7 @@ class DiffusionTemporalEnsembler:
         )
 
         return action
-    
+
 
 class DiffusionModel(nn.Module):
     def __init__(self, config: ForceDiffusionConfig):
@@ -430,7 +432,7 @@ class DiffusionModel(nn.Module):
             )
             # Compute previous image: x_t -> x_t-1
             sample = self.noise_scheduler.step(model_output, t, sample, generator=generator).prev_sample
-            
+
             if denoised_sequence is not None:
                 denoised_sequence.append(sample)
 
@@ -774,7 +776,7 @@ class DiffusionConditionalUnet1d(nn.Module):
     Note: this removes local conditioning as compared to the original diffusion policy code.
     """
 
-    def __init__(self, config: ForceDiffusionConfig, outputsum: int ,global_cond_dim: int):
+    def __init__(self, config: ForceDiffusionConfig, outputsum: int, global_cond_dim: int):
         super().__init__()
 
         self.config = config

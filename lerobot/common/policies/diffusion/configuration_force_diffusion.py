@@ -132,12 +132,14 @@ class ForceDiffusionConfig:
     # model: str = "TRANSFORMER"
     # Vision backbone.
     vision_backbone: str = "resnet18"
-    crop_shape: tuple[int, int] | None = (420, 620)
+    # crop_shape: tuple[int, int] | None = (480, 640)
+    crop_shape: tuple[int, int] | None = None
     crop_is_random: bool = True
     pretrained_backbone_weights: str | None = None
     use_group_norm: bool = True
     spatial_softmax_num_keypoints: int = 32
     temporal_ensemble_coeff: float | None = None
+    action_drop: int | None = None
 
     collect_denoised_sequence: bool = False
 
