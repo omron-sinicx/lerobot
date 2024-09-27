@@ -50,7 +50,7 @@ def get_cameras(hdf5_data):
 
 def check_format(raw_dir) -> bool:
     # only frames from simulation are uncompressed
-    compressed_images = "sim" not in raw_dir.name
+    compressed_images = False  # "sim" not in raw_dir.name
 
     hdf5_paths = list(raw_dir.glob("episode_*.hdf5"))
     assert len(hdf5_paths) != 0
@@ -83,13 +83,15 @@ def load_from_raw(
     video: bool,
     episodes: list[int] | None = None,
     encoding: dict | None = None,
+    resume: bool = False,
 ):
     # only frames from simulation are uncompressed
-    compressed_images = "sim" not in raw_dir.name
+    compressed_images = False  # "sim" not in raw_dir.name
 
     hdf5_files = sorted(raw_dir.glob("episode_*.hdf5"))
     num_episodes = len(hdf5_files)
 
+    metadata = None
     ep_dicts = []
     ep_ids = episodes if episodes else range(num_episodes)
     for ep_idx in tqdm.tqdm(ep_ids):
@@ -101,12 +103,37 @@ def load_from_raw(
             done = torch.zeros(num_frames, dtype=torch.bool)
             done[-1] = True
 
-            state = torch.from_numpy(ep["/observations/qpos"][:])
             action = torch.from_numpy(ep["/action"][:])
+
+            if "action.stiffness_diag" in ep:
+                action_stiffness_diag = torch.from_numpy(ep["/action.stiffness_diag"][:])
+            if "action.position" in ep:
+                action_position = torch.from_numpy(ep["/action.position"][:])
+            if "action.rotation_ortho6" in ep:
+                action_rotation_ortho6 = torch.from_numpy(ep["/action.rotation_ortho6"][:])
+            if "action.gripper" in ep:
+                action_gripper = torch.from_numpy(ep["/action.gripper"][:])
+
+            if "/observations/qvel" in ep:
+                qpos = torch.from_numpy(ep["/observations/qpos"][:])
             if "/observations/qvel" in ep:
                 velocity = torch.from_numpy(ep["/observations/qvel"][:])
             if "/observations/effort" in ep:
                 effort = torch.from_numpy(ep["/observations/effort"][:])
+            if "/observations/ft" in ep:
+                ft = torch.from_numpy(ep["/observations/ft"][:])
+            if "/observations/eef_pos" in ep:
+                eef_pos = torch.from_numpy(ep["/observations/eef_pos"][:])
+            if "/observations/eef_pos.position" in ep:
+                eef_pos_position = torch.from_numpy(ep["/observations/eef_pos.position"][:])
+            if "/observations/eef_pos.rotation_ortho6" in ep:
+                eef_pos_rotation_ortho6 = torch.from_numpy(ep["/observations/eef_pos.rotation_ortho6"][:])
+            if "/observations/eef_pos.gripper" in ep:
+                eef_pos_gripper = torch.from_numpy(ep["/observations/eef_pos.gripper"][:])
+            if "/observations/eef_vel" in ep:
+                eef_vel = torch.from_numpy(ep["/observations/eef_vel"][:])
+
+            state = torch.hstack((eef_pos, ft))
 
             ep_dict = {}
 
@@ -127,35 +154,82 @@ def load_from_raw(
                     imgs_array = ep[f"/observations/images/{camera}"][:]
 
                 if video:
-                    # save png images in temporary directory
-                    tmp_imgs_dir = videos_dir / "tmp_images"
-                    save_images_concurrently(imgs_array, tmp_imgs_dir)
-
-                    # encode images to a mp4 video
+                    process_video = True
                     fname = f"{img_key}_episode_{ep_idx:06d}.mp4"
                     video_path = videos_dir / fname
-                    encode_video_frames(tmp_imgs_dir, video_path, fps, **(encoding or {}))
 
-                    # clean temporary images directory
-                    shutil.rmtree(tmp_imgs_dir)
+                    if resume:
+                        # If the video already exists, skip
+                        if video_path.exists():
+                            ep_dict[img_key] = [
+                                {"path": f"videos/{fname}", "timestamp": i / fps} for i in range(num_frames)
+                            ]
+                            process_video = False
 
-                    # store the reference to the video frame
-                    ep_dict[img_key] = [
-                        {"path": f"videos/{fname}", "timestamp": i / fps} for i in range(num_frames)
-                    ]
+                    if process_video:
+                        # save png images in temporary directory
+                        tmp_imgs_dir = videos_dir / "tmp_images"
+                        save_images_concurrently(imgs_array, tmp_imgs_dir)
+
+                        # encode images to a mp4 video
+                        encode_video_frames(
+                            tmp_imgs_dir, video_path, fps, **(encoding or {}))
+
+                        # clean temporary images directory
+                        shutil.rmtree(tmp_imgs_dir)
+
+                        # store the reference to the video frame
+                        ep_dict[img_key] = [
+                            {"path": f"videos/{fname}", "timestamp": i / fps} for i in range(num_frames)
+                        ]
                 else:
-                    ep_dict[img_key] = [PILImage.fromarray(x) for x in imgs_array]
+                    ep_dict[img_key] = [
+                        PILImage.fromarray(x) for x in imgs_array]
 
             ep_dict["observation.state"] = state
+            if "/observations/qpos" in ep:
+                ep_dict["observation.qpos"] = qpos
             if "/observations/velocity" in ep:
                 ep_dict["observation.velocity"] = velocity
             if "/observations/effort" in ep:
                 ep_dict["observation.effort"] = effort
+            if "/observations/ft" in ep:
+                ep_dict["observation.ft"] = ft
+            if "/observations/eef_pos" in ep:
+                ep_dict["observation.eef_pos"] = eef_pos
+            if "/observations/eef_pos" in ep:
+                ep_dict["observation.eef_pos.position"] = eef_pos_position
+            if "/observations/eef_pos" in ep:
+                ep_dict["observation.eef_pos.rotation_ortho6"] = eef_pos_rotation_ortho6
+            if "/observations/eef_pos" in ep:
+                ep_dict["observation.eef_pos.gripper"] = eef_pos_gripper
+            if "/observations/eef_vel" in ep:
+                ep_dict["observation.eef_vel"] = eef_vel
             ep_dict["action"] = action
+
+            if "action.stiffness_diag" in ep:
+                ep_dict["action.stiffness_diag"] = torch.from_numpy(ep["/action.stiffness_diag"][:])
+            if "action.position" in ep:
+                ep_dict["action.position"] = torch.from_numpy(ep["/action.position"][:])
+            if "action.rotation_ortho6" in ep:
+                ep_dict["action.rotation_ortho6"] = torch.from_numpy(ep["/action.rotation_ortho6"][:])
+            if "action.gripper" in ep:
+                ep_dict["action.gripper"] = torch.from_numpy(ep["/action.gripper"][:])
+
             ep_dict["episode_index"] = torch.tensor([ep_idx] * num_frames)
             ep_dict["frame_index"] = torch.arange(0, num_frames, 1)
             ep_dict["timestamp"] = torch.arange(0, num_frames, 1) / fps
             ep_dict["next.done"] = done
+            # Add additional metadata
+            if metadata is None:
+                metadata = {}
+            if ep.attrs:
+                for k in ep.attrs.keys():
+                    if isinstance(ep.attrs[k], np.ndarray):
+                        metadata[k] = list(ep.attrs[k])
+                    elif not isinstance(ep.attrs[k], (str, bool)):
+                        metadata[k] = int(ep.attrs[k])
+
             # TODO(rcadene): add reward and success by computing them in sim
 
             assert isinstance(ep_idx, int)
@@ -167,6 +241,7 @@ def load_from_raw(
 
     total_frames = data_dict["frame_index"].shape[0]
     data_dict["index"] = torch.arange(0, total_frames, 1)
+    data_dict["metadata"] = metadata
     return data_dict
 
 
@@ -183,6 +258,10 @@ def to_hf_dataset(data_dict, video) -> Dataset:
     features["observation.state"] = Sequence(
         length=data_dict["observation.state"].shape[1], feature=Value(dtype="float32", id=None)
     )
+    if "observation.qpos" in data_dict:
+        features["observation.qpos"] = Sequence(
+            length=data_dict["observation.qpos"].shape[1], feature=Value(dtype="float32", id=None)
+        )
     if "observation.velocity" in data_dict:
         features["observation.velocity"] = Sequence(
             length=data_dict["observation.velocity"].shape[1], feature=Value(dtype="float32", id=None)
@@ -191,9 +270,51 @@ def to_hf_dataset(data_dict, video) -> Dataset:
         features["observation.effort"] = Sequence(
             length=data_dict["observation.effort"].shape[1], feature=Value(dtype="float32", id=None)
         )
+    if "observation.ft" in data_dict:
+        features["observation.ft"] = Sequence(
+            length=data_dict["observation.ft"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "observation.eef_pos" in data_dict:
+        features["observation.eef_pos"] = Sequence(
+            length=data_dict["observation.eef_pos"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "observation.eef_pos.position" in data_dict:
+        features["observation.eef_pos.position"] = Sequence(
+            length=data_dict["observation.eef_pos.position"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "observation.eef_pos.rotation_ortho6" in data_dict:
+        features["observation.eef_pos.rotation_ortho6"] = Sequence(
+            length=data_dict["observation.eef_pos.rotation_ortho6"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "observation.eef_pos.gripper" in data_dict:
+        features["observation.eef_pos.gripper"] = Sequence(
+            length=data_dict["observation.eef_pos.gripper"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "observation.eef_vel" in data_dict:
+        features["observation.eef_vel"] = Sequence(
+            length=data_dict["observation.eef_vel"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+
     features["action"] = Sequence(
         length=data_dict["action"].shape[1], feature=Value(dtype="float32", id=None)
     )
+    if "action.position" in data_dict:
+        features["action.position"] = Sequence(
+            length=data_dict["action.position"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "action.rotation_ortho6" in data_dict:
+        features["action.rotation_ortho6"] = Sequence(
+            length=data_dict["action.rotation_ortho6"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "action.stiffness_diag" in data_dict:
+        features["action.stiffness_diag"] = Sequence(
+            length=data_dict["action.stiffness_diag"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "action.gripper" in data_dict:
+        features["action.gripper"] = Sequence(
+            length=data_dict["action.gripper"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+
     features["episode_index"] = Value(dtype="int64", id=None)
     features["frame_index"] = Value(dtype="int64", id=None)
     features["timestamp"] = Value(dtype="float32", id=None)
@@ -212,6 +333,7 @@ def from_raw_to_lerobot_format(
     video: bool = True,
     episodes: list[int] | None = None,
     encoding: dict | None = None,
+    resume: bool = False,
 ):
     # sanity check
     check_format(raw_dir)
@@ -219,13 +341,17 @@ def from_raw_to_lerobot_format(
     if fps is None:
         fps = 50
 
-    data_dict = load_from_raw(raw_dir, videos_dir, fps, video, episodes, encoding)
+    data_dict = load_from_raw(raw_dir, videos_dir, fps, video, episodes, encoding, resume)
+    print(f"{data_dict.keys()=}")
+    # exit(0)
+    metadata = data_dict.pop("metadata", None)
     hf_dataset = to_hf_dataset(data_dict, video)
     episode_data_index = calculate_episode_data_index(hf_dataset)
     info = {
         "codebase_version": CODEBASE_VERSION,
         "fps": fps,
         "video": video,
+        "metadata": metadata
     }
     if video:
         info["encoding"] = get_default_encoding()
