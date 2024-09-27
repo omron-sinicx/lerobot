@@ -139,7 +139,6 @@ class ForceDiffusionConfig:
     spatial_softmax_num_keypoints: int = 32
     temporal_ensemble_coeff: float | None = None
 
-
     # Unet / FILM
     down_dims: tuple[int, ...] = (512, 1024, 2048)
     kernel_size: int = 5
@@ -154,6 +153,7 @@ class ForceDiffusionConfig:
     beta_start: float = 0.0001
     beta_end: float = 0.02
     prediction_type: str = "epsilon"
+    loss_type: str = "mse"
     clip_sample: bool = True
     clip_sample_range: float = 1.0
 

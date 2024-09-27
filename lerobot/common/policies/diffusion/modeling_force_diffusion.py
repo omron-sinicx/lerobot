@@ -511,7 +511,12 @@ class DiffusionModel(nn.Module):
         else:
             raise ValueError(f"Unsupported prediction type {self.config.prediction_type}")
 
-        loss = F.mse_loss(pred, target, reduction="none")
+        if self.config.loss_type == "mse":
+            loss_func = F.mse_loss
+        elif self.config.loss_type == "l1":
+            loss_func = F.l1_loss 
+
+        loss = loss_func(pred, target, reduction="none")
         # For reference only, not used for training
         loss_l1 = F.l1_loss(pred, target, reduction="none")
 
