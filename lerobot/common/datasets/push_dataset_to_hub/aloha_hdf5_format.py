@@ -17,6 +17,7 @@
 Contains utilities to process raw data format of HDF5 files like in: https://github.com/tonyzhaozh/act
 """
 
+from __future__ import annotations
 import gc
 import shutil
 from pathlib import Path
