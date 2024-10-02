@@ -50,6 +50,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         image_transforms: Callable | None = None,
         delta_timestamps: dict[list[float]] | None = None,
         video_backend: str | None = None,
+        ignore_videos: bool | None = True,
     ):
         super().__init__()
         self.repo_id = repo_id
@@ -57,6 +58,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.split = split
         self.image_transforms = image_transforms
         self.delta_timestamps = delta_timestamps
+        self.ignore_videos = ignore_videos
         # load data from hub or locally when root is provided
         # TODO(rcadene, aliberts): implement faster transfer
         # https://huggingface.co/docs/huggingface_hub/en/guides/download#faster-downloads
@@ -145,7 +147,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 self.tolerance_s,
             )
 
-        if self.video:
+        if self.video and not self.ignore_videos:
             item = load_from_videos(
                 item,
                 self.video_frame_keys,
