@@ -84,5 +84,10 @@ if __name__ == "__main__":
         "lerobot/pusht",
         "lerobot/aloha_sim_insertion_human",
         "lerobot/xarm_lift_medium",
+<<<<<<< HEAD
+=======
+        "lerobot/nyu_franka_play_dataset",
+        "lerobot/cmu_stretch",
+>>>>>>> d23faab526d85438722e58f536cb7048afef3d08
     ]:
         save_dataset_to_safetensors("tests/data/save_dataset_to_safetensors", repo_id=dataset)

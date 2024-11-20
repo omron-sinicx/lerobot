@@ -1,33 +1,72 @@
+"""
+Tests meant to be used locally and launched manually.
+
+Example usage:
+```bash
+pytest -sx tests/test_motors.py::test_find_port
+pytest -sx tests/test_motors.py::test_motors_bus
+```
+"""
+
+# TODO(rcadene): measure fps in nightly?
+# TODO(rcadene): test logs
+# TODO(rcadene): test calibration
+# TODO(rcadene): add compatibility with other motors bus
+
 import time
 
 import numpy as np
 import pytest
 
+from lerobot import available_robots
+from lerobot.common.robot_devices.motors.utils import MotorsBus
+from lerobot.common.robot_devices.robots.factory import make_robot
 from lerobot.common.robot_devices.utils import RobotDeviceAlreadyConnectedError, RobotDeviceNotConnectedError
-from tests.utils import require_koch
+from lerobot.common.utils.utils import init_hydra_config
+from tests.utils import ROBOT_CONFIG_PATH_TEMPLATE, require_robot
 
 
-@require_koch
-def test_motors_bus(request):
-    # TODO(rcadene): measure fps in nightly?
-    # TODO(rcadene): test logs
-    # TODO(rcadene): test calibration
-    # TODO(rcadene): add compatibility with other motors bus
-    from lerobot.common.robot_devices.motors.dynamixel import DynamixelMotorsBus
+def make_motors_bus(robot_type: str) -> MotorsBus:
+    # Instantiate a robot and return one of its leader arms
+    config_path = ROBOT_CONFIG_PATH_TEMPLATE.format(robot=robot_type)
+    robot_cfg = init_hydra_config(config_path)
+    robot = make_robot(robot_cfg)
+    first_bus_name = list(robot.leader_arms.keys())[0]
+    motors_bus = robot.leader_arms[first_bus_name]
+    return motors_bus
 
-    # Test instantiating a common motors structure.
-    # Here the one from Alexander Koch follower arm.
-    port = "/dev/tty.usbmodem575E0032081"
-    motors = {
-        # name: (index, model)
-        "shoulder_pan": (1, "xl430-w250"),
-        "shoulder_lift": (2, "xl430-w250"),
-        "elbow_flex": (3, "xl330-m288"),
-        "wrist_flex": (4, "xl330-m288"),
-        "wrist_roll": (5, "xl330-m288"),
-        "gripper": (6, "xl330-m288"),
-    }
-    motors_bus = DynamixelMotorsBus(port, motors)
+
+@pytest.mark.parametrize("robot_type", available_robots)
+@require_robot
+def test_find_port(request, robot_type):
+    from lerobot.common.robot_devices.motors.dynamixel import find_port
+
+    find_port()
+
+
+@pytest.mark.parametrize("robot_type", available_robots)
+@require_robot
+def test_configure_motors_all_ids_1(request, robot_type):
+    input("Are you sure you want to re-configure the motors? Press enter to continue...")
+    # This test expect the configuration was already correct.
+    motors_bus = make_motors_bus(robot_type)
+    motors_bus.connect()
+    motors_bus.write("Baud_Rate", [0] * len(motors_bus.motors))
+    motors_bus.set_bus_baudrate(9_600)
+    motors_bus.write("ID", [1] * len(motors_bus.motors))
+    del motors_bus
+
+    # Test configure
+    motors_bus = make_motors_bus(robot_type)
+    motors_bus.connect()
+    assert motors_bus.are_motors_configured()
+    del motors_bus
+
+
+@pytest.mark.parametrize("robot_type", available_robots)
+@require_robot
+def test_motors_bus(request, robot_type):
+    motors_bus = make_motors_bus(robot_type)
 
     # Test reading and writting before connecting raises an error
     with pytest.raises(RobotDeviceNotConnectedError):
@@ -41,7 +80,7 @@ def test_motors_bus(request):
     del motors_bus
 
     # Test connecting
-    motors_bus = DynamixelMotorsBus(port, motors)
+    motors_bus = make_motors_bus(robot_type)
     motors_bus.connect()
 
     # Test connecting twice raises an error
@@ -52,7 +91,7 @@ def test_motors_bus(request):
     motors_bus.write("Torque_Enable", 0)
     values = motors_bus.read("Torque_Enable")
     assert isinstance(values, np.ndarray)
-    assert len(values) == len(motors)
+    assert len(values) == len(motors_bus.motors)
     assert (values == 0).all()
 
     # Test writing torque on a specific motor
@@ -83,10 +122,3 @@ def test_motors_bus(request):
     time.sleep(1)
     new_values = motors_bus.read("Present_Position")
     assert (new_values == values).all()
-
-
-@require_koch
-def test_find_port(request):
-    from lerobot.common.robot_devices.motors.dynamixel import find_port
-
-    find_port()

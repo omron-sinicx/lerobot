@@ -41,6 +41,10 @@ import timeit
 
 from lerobot.common.policies.diffusion.configuration_force_diffusion import ForceDiffusionConfig
 from lerobot.common.policies.normalize import Normalize, Unnormalize
+<<<<<<< HEAD
+=======
+from lerobot.common.policies.diffusion.transformer_diffusion import TransformerForDiffusion
+>>>>>>> d23faab526d85438722e58f536cb7048afef3d08
 from lerobot.common.policies.utils import (
     get_device_from_parameters,
     get_dtype_from_parameters,
@@ -385,6 +389,10 @@ class DiffusionModel(nn.Module):
                 n_cond_layers=config.n_cond_layers
             )
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> d23faab526d85438722e58f536cb7048afef3d08
         self.noise_scheduler = _make_noise_scheduler(
             config.noise_scheduler_type,
             num_train_timesteps=config.num_train_timesteps,

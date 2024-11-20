@@ -128,8 +128,13 @@ class ForceDiffusionConfig:
     output_normalization_modes: dict[str, str] = field(default_factory=lambda: {"action": "min_max"})
 
     # Architecture / modeling.
+<<<<<<< HEAD
     # model: str = "FILM"
     model: str = "TRANSFORMER"
+=======
+    model: str = "FILM"
+    # model: str = "TRANSFORMER"
+>>>>>>> d23faab526d85438722e58f536cb7048afef3d08
     # Vision backbone.
     vision_backbone: str = "resnet18"
     # crop_shape: tuple[int, int] | None = (480, 640)

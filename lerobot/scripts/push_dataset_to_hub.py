@@ -58,7 +58,11 @@ from safetensors.torch import save_file
 from lerobot.common.datasets.compute_stats import compute_stats
 from lerobot.common.datasets.lerobot_dataset import CODEBASE_VERSION, LeRobotDataset
 from lerobot.common.datasets.push_dataset_to_hub.utils import check_repo_id
+<<<<<<< HEAD
 from lerobot.common.datasets.utils import flatten_dict
+=======
+from lerobot.common.datasets.utils import create_branch, create_lerobot_dataset_card, flatten_dict
+>>>>>>> d23faab526d85438722e58f536cb7048afef3d08
 
 
 def get_from_raw_to_lerobot_format_fn(raw_format: str):
@@ -68,6 +72,8 @@ def get_from_raw_to_lerobot_format_fn(raw_format: str):
         from lerobot.common.datasets.push_dataset_to_hub.umi_zarr_format import from_raw_to_lerobot_format
     elif raw_format == "aloha_hdf5":
         from lerobot.common.datasets.push_dataset_to_hub.aloha_hdf5_format import from_raw_to_lerobot_format
+    elif "openx_rlds" in raw_format:
+        from lerobot.common.datasets.push_dataset_to_hub.openx_rlds_format import from_raw_to_lerobot_format
     elif raw_format == "dora_parquet":
         from lerobot.common.datasets.push_dataset_to_hub.dora_parquet_format import from_raw_to_lerobot_format
     elif raw_format == "xarm_pkl":
@@ -116,6 +122,14 @@ def push_meta_data_to_hub(repo_id: str, meta_data_dir: str | Path, revision: str
         revision=revision,
         repo_type="dataset",
     )
+
+
+def push_dataset_card_to_hub(
+    repo_id: str, revision: str | None, tags: list | None = None, text: str | None = None
+):
+    """Creates and pushes a LeRobotDataset Card with appropriate tags to easily find it on the hub."""
+    card = create_lerobot_dataset_card(tags=tags, text=text)
+    card.push_to_hub(repo_id=repo_id, repo_type="dataset", revision=revision)
 
 
 def push_videos_to_hub(repo_id: str, videos_dir: str | Path, revision: str | None):
@@ -233,6 +247,25 @@ def push_dataset_to_hub(
         raw_dir, videos_dir, fps, video, episodes, encoding, resume
     )
 
+    fmt_kwgs = {
+        "raw_dir": raw_dir,
+        "videos_dir": videos_dir,
+        "fps": fps,
+        "video": video,
+        "episodes": episodes,
+        "encoding": encoding,
+    }
+
+    if "openx_rlds." in raw_format:
+        # Support for official OXE dataset name inside `raw_format`.
+        # For instance, `raw_format="oxe_rlds"` uses the default formating (TODO what does that mean?),
+        # and `raw_format="oxe_rlds.bridge_orig"` uses the brdige_orig formating
+        _, openx_dataset_name = raw_format.split(".")
+        print(f"Converting dataset [{openx_dataset_name}] from 'openx_rlds' to LeRobot format.")
+        fmt_kwgs["openx_dataset_name"] = openx_dataset_name
+
+    hf_dataset, episode_data_index, info = from_raw_to_lerobot_format(**fmt_kwgs)
+
     lerobot_dataset = LeRobotDataset.from_preloaded(
         repo_id=repo_id,
         hf_dataset=hf_dataset,
@@ -255,10 +288,10 @@ def push_dataset_to_hub(
     if push_to_hub:
         hf_dataset.push_to_hub(repo_id, revision="main")
         push_meta_data_to_hub(repo_id, meta_data_dir, revision="main")
+        push_dataset_card_to_hub(repo_id, revision="main")
         if video:
             push_videos_to_hub(repo_id, videos_dir, revision="main")
-        api = HfApi()
-        api.create_branch(repo_id, repo_type="dataset", branch=CODEBASE_VERSION)
+        create_branch(repo_id, repo_type="dataset", branch=CODEBASE_VERSION)
 
     if tests_data_dir:
         # get the first episode
@@ -302,7 +335,7 @@ def main():
         "--raw-format",
         type=str,
         required=True,
-        help="Dataset type (e.g. `pusht_zarr`, `umi_zarr`, `aloha_hdf5`, `xarm_pkl`, `dora_parquet`).",
+        help="Dataset type (e.g. `pusht_zarr`, `umi_zarr`, `aloha_hdf5`, `xarm_pkl`, `dora_parquet`, `openx_rlds`).",
     )
     parser.add_argument(
         "--repo-id",
@@ -368,6 +401,16 @@ def main():
         help="When set to 1, resumes a previous run.",
     )
     parser.add_argument(
+<<<<<<< HEAD
+=======
+        "--cache-dir",
+        type=Path,
+        required=False,
+        default="/tmp",
+        help="Directory to store the temporary videos and images generated while creating the dataset.",
+    )
+    parser.add_argument(
+>>>>>>> d23faab526d85438722e58f536cb7048afef3d08
         "--tests-data-dir",
         type=Path,
         help=(
