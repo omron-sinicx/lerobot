@@ -58,11 +58,7 @@ from safetensors.torch import save_file
 from lerobot.common.datasets.compute_stats import compute_stats
 from lerobot.common.datasets.lerobot_dataset import CODEBASE_VERSION, LeRobotDataset
 from lerobot.common.datasets.push_dataset_to_hub.utils import check_repo_id
-<<<<<<< HEAD
-from lerobot.common.datasets.utils import flatten_dict
-=======
 from lerobot.common.datasets.utils import create_branch, create_lerobot_dataset_card, flatten_dict
->>>>>>> d23faab526d85438722e58f536cb7048afef3d08
 
 
 def get_from_raw_to_lerobot_format_fn(raw_format: str):
@@ -401,8 +397,6 @@ def main():
         help="When set to 1, resumes a previous run.",
     )
     parser.add_argument(
-<<<<<<< HEAD
-=======
         "--cache-dir",
         type=Path,
         required=False,
@@ -410,7 +404,6 @@ def main():
         help="Directory to store the temporary videos and images generated while creating the dataset.",
     )
     parser.add_argument(
->>>>>>> d23faab526d85438722e58f536cb7048afef3d08
         "--tests-data-dir",
         type=Path,
         help=(

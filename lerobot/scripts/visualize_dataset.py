@@ -68,11 +68,14 @@ import time
 from pathlib import Path
 from typing import Iterator
 
+from cv2 import magnitude
 import numpy as np
 import rerun as rr
+import rerun.blueprint as rrb
 import torch
 import torch.utils.data
 import tqdm
+from typing import Union
 
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
@@ -108,9 +111,9 @@ def visualize_dataset(
     web_port: int = 9090,
     ws_port: int = 9087,
     save: bool = False,
-    root: Path | None = None,
-    output_dir: Path | None = None,
-) -> Path | None:
+    root: Union[Path, None] = None,
+    output_dir: Union[Path, None] = None,
+) -> Union[Path, None]:
     if save:
         assert (
             output_dir is not None
@@ -136,6 +139,7 @@ def visualize_dataset(
     spawn_local_viewer = mode == "local" and not save
     rr.init(f"{repo_id}/episode_{episode_index}", spawn=spawn_local_viewer)
 
+
     # Manually call python garbage collector after `rr.init` to avoid hanging in a blocking flush
     # when iterating on a dataloader with `num_workers` > 0
     # TODO(rcadene): remove `gc.collect` when rerun version 0.16 is out, which includes a fix
@@ -145,10 +149,13 @@ def visualize_dataset(
         rr.serve(open_browser=False, web_port=web_port, ws_port=ws_port)
 
     logging.info("Logging to Rerun")
-
+    eef_positions = []
     for batch in tqdm.tqdm(dataloader, total=len(dataloader)):
         # iterate over the batch
         for i in range(len(batch["index"])):
+
+            # Note: Playback speed (fps) is still not settable from code.
+            # https://github.com/rerun-io/rerun/issues/5577 
             rr.set_time_sequence("frame_index", batch["frame_index"][i].item())
             rr.set_time_seconds("timestamp", batch["timestamp"][i].item())
 
@@ -157,24 +164,87 @@ def visualize_dataset(
                 # TODO(rcadene): add `.compress()`? is it lossless?
                 rr.log(key, rr.Image(to_hwc_uint8_numpy(batch[key][i])))
 
-            # display each dimension of action space (e.g. actuators command)
-            if "action" in batch:
-                for dim_idx, val in enumerate(batch["action"][i]):
-                    rr.log(f"action/{dim_idx}", rr.Scalar(val.item()))
+            # display EEF trajectory
+            if "observation.eef.position" in batch:
+                eef_pos = batch["observation.eef.position"][i].numpy()
+                eef_positions.append(eef_pos)
+                rr.log("observation/eef/position", rr.LineStrips3D(
+                    np.array(eef_positions),
+                    ))
+                rr.log("observation/eef/frame", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)  # Set an up-axis
+                rr.log(
+                    "observation/eef/frame_arrow",
+                    rr.Arrows3D(
+                        vectors=[[0.5, 0, 0], [0, 0.5, 0], [0, 0, 0.5]],
+                        # vectors=[[0, 0.5, 0], [-0.5, 0, 0], [0, 0, 0.5]],
+                        colors=[[255, 0, 0], [0, 255, 0], [0, 0, 255]],
+                    ),
+                )
+            
+            # display the summed magnitude of flow vectors
+            if "observation.tactile.flow" in batch:
+                vectors = batch["observation.tactile.flow"][i].numpy()
+                flow_vectors = vectors.reshape(-1, 2)
+                magnitudes = np.linalg.norm(flow_vectors, axis=1)
+                total_magnitude = magnitudes.sum()
+                rr.log("observation/flow_vector_magnitude", rr.Scalar(total_magnitude))
+            
+            # display F/T
+            if "observation.ft" in batch:
+                force = batch["observation.ft"][i].numpy()[:3]
+                torque = batch["observation.ft"][i].numpy()[3:]
 
-            # display each dimension of observed state space (e.g. agent position in joint space)
-            if "observation.state" in batch:
-                for dim_idx, val in enumerate(batch["observation.state"][i]):
-                    rr.log(f"state/{dim_idx}", rr.Scalar(val.item()))
+                rr.log("observation/ft/force_z", rr.Scalar(force[2]))
+                rr.log("observation/ft/force_y", rr.Scalar(force[1]))
+                rr.log("observation/ft/force_x", rr.Scalar(force[0]))
+                rr.log("observation/ft/torque_x", rr.Scalar(torque[0]))
+                rr.log("observation/ft/torque_y", rr.Scalar(torque[1]))
+                rr.log("observation/ft/torque_z", rr.Scalar(torque[2]))
 
-            if "next.done" in batch:
-                rr.log("next.done", rr.Scalar(batch["next.done"][i].item()))
-
-            if "next.reward" in batch:
-                rr.log("next.reward", rr.Scalar(batch["next.reward"][i].item()))
-
-            if "next.success" in batch:
-                rr.log("next.success", rr.Scalar(batch["next.success"][i].item()))
+            # display extra_camera, traj, tactile, tactile vector, force
+            blueprint = rrb.Blueprint(
+                rrb.Horizontal(
+                    rrb.Vertical(
+                        rrb.Spatial2DView(name="extra camera", origin="observation.image.extra_camera"),
+                        rrb.Spatial3DView(
+                            name="EEF trajectory", 
+                            contents=[
+                                "+ /observation/eef/position",
+                                "+ /observation/eef/frame",
+                                "+ /observation/eef/frame_arrow",
+                            ],
+                            background=[0, 0, 0],
+                            overrides={
+                                "observation/eef/position": [rr.components.Color([128, 0, 128])]
+                            },
+                            ),
+                    ),
+                    rrb.Vertical(
+                        rrb.Spatial2DView(name="tactile flow", origin="observation.tactile.image_flow_overlaid"),
+                        rrb.TimeSeriesView(
+                            name="force plot", 
+                            contents=[
+                                "+ /observation/ft/force_x",
+                                "+ /observation/ft/force_y",
+                                "+ /observation/ft/force_z",
+                            ])
+                    ),
+                    rrb.Vertical(
+                        rrb.TimeSeriesView(name="tactile magnitude", origin="observation/flow_vector_magnitude"),
+                        rrb.TimeSeriesView(
+                            name="torque plot",
+                            contents=[
+                                "+ /observation/ft/torque_x",
+                                "+ /observation/ft/torque_y",
+                                "+ /observation/ft/torque_z",
+                            ])
+                    ),
+                ),
+                rrb.BlueprintPanel(state="expanded"),
+                rrb.SelectionPanel(state="collapsed"),
+                rrb.TimePanel(state="collapsed"),
+            )
+            rr.send_blueprint(blueprint)
 
     if mode == "local" and save:
         # save .rrd locally

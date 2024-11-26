@@ -249,56 +249,64 @@ def load_from_raw(
 def to_hf_dataset(data_dict, video) -> Dataset:
     features = {}
 
-    keys = [key for key in data_dict if "observation.images." in key]
+    keys = [key for key in data_dict if "image" in key]
     for key in keys:
         if video:
             features[key] = VideoFrame()
         else:
             features[key] = Image()
 
-    features["observation.state"] = Sequence(
-        length=data_dict["observation.state"].shape[1], feature=Value(dtype="float32", id=None)
-    )
+    # features["observation.state"] = Sequence(
+    #     length=data_dict["observation.state"].shape[1], feature=Value(dtype="float32", id=None)
+    # )
     if "observation.qpos" in data_dict:
         features["observation.qpos"] = Sequence(
             length=data_dict["observation.qpos"].shape[1], feature=Value(dtype="float32", id=None)
         )
-    if "observation.velocity" in data_dict:
-        features["observation.velocity"] = Sequence(
-            length=data_dict["observation.velocity"].shape[1], feature=Value(dtype="float32", id=None)
+    if "observation.qvel" in data_dict:
+        features["observation.qvel"] = Sequence(
+            length=data_dict["observation.qvel"].shape[1], feature=Value(dtype="float32", id=None)
         )
-    if "observation.effort" in data_dict:
-        features["observation.effort"] = Sequence(
-            length=data_dict["observation.effort"].shape[1], feature=Value(dtype="float32", id=None)
-        )
+    # if "observation.effort" in data_dict:
+    #     features["observation.effort"] = Sequence(
+    #         length=data_dict["observation.effort"].shape[1], feature=Value(dtype="float32", id=None)
+    #     )
     if "observation.ft" in data_dict:
         features["observation.ft"] = Sequence(
             length=data_dict["observation.ft"].shape[1], feature=Value(dtype="float32", id=None)
         )
-    if "observation.eef_pos" in data_dict:
-        features["observation.eef_pos"] = Sequence(
-            length=data_dict["observation.eef_pos"].shape[1], feature=Value(dtype="float32", id=None)
+    if "observation.tactile.flow" in data_dict:
+        features["observation.tactile.flow"] = Sequence(
+            length=data_dict["observation.tactile.flow"].shape[1], feature=Value(dtype="float32", id=None)
         )
-    if "observation.eef_pos.position" in data_dict:
-        features["observation.eef_pos.position"] = Sequence(
-            length=data_dict["observation.eef_pos.position"].shape[1], feature=Value(dtype="float32", id=None)
+    # if "observation.eef_pos" in data_dict:
+    #     features["observation.eef_pos"] = Sequence(
+    #         length=data_dict["observation.eef_pos"].shape[1], feature=Value(dtype="float32", id=None)
+    #     )
+    if "observation.eef.position" in data_dict:
+        features["observation.eef.position"] = Sequence(
+            length=data_dict["observation.eef.position"].shape[1], feature=Value(dtype="float32", id=None)
         )
-    if "observation.eef_pos.rotation_ortho6" in data_dict:
-        features["observation.eef_pos.rotation_ortho6"] = Sequence(
-            length=data_dict["observation.eef_pos.rotation_ortho6"].shape[1], feature=Value(dtype="float32", id=None)
+    if "observation.eef.rotation_axis_angle" in data_dict:
+        features["observation.eef.rotation_axis_angle"] = Sequence(
+            length=data_dict["observation.eef.rotation_axis_angle"].shape[1], feature=Value(dtype="float32", id=None)
         )
-    if "observation.eef_pos.gripper" in data_dict:
-        features["observation.eef_pos.gripper"] = Sequence(
-            length=data_dict["observation.eef_pos.gripper"].shape[1], feature=Value(dtype="float32", id=None)
+    if "observation.eef.rotation_ortho6" in data_dict:
+        features["observation.eef.rotation_ortho6"] = Sequence(
+            length=data_dict["observation.eef.rotation_ortho6"].shape[1], feature=Value(dtype="float32", id=None)
         )
-    if "observation.eef_vel" in data_dict:
-        features["observation.eef_vel"] = Sequence(
-            length=data_dict["observation.eef_vel"].shape[1], feature=Value(dtype="float32", id=None)
+    if "observation.gripper" in data_dict:
+        features["observation.gripper"] = Sequence(
+            length=data_dict["observation.gripper"].shape[1], feature=Value(dtype="float32", id=None)
         )
+    # if "observation.eef_vel" in data_dict:
+    #     features["observation.eef_vel"] = Sequence(
+    #         length=data_dict["observation.eef_vel"].shape[1], feature=Value(dtype="float32", id=None)
+    #     )
 
-    features["action"] = Sequence(
-        length=data_dict["action"].shape[1], feature=Value(dtype="float32", id=None)
-    )
+    # features["action"] = Sequence(
+    #     length=data_dict["action"].shape[1], feature=Value(dtype="float32", id=None)
+    # )
     if "action.position" in data_dict:
         features["action.position"] = Sequence(
             length=data_dict["action.position"].shape[1], feature=Value(dtype="float32", id=None)
@@ -307,9 +315,13 @@ def to_hf_dataset(data_dict, video) -> Dataset:
         features["action.rotation_ortho6"] = Sequence(
             length=data_dict["action.rotation_ortho6"].shape[1], feature=Value(dtype="float32", id=None)
         )
-    if "action.stiffness_diag" in data_dict:
-        features["action.stiffness_diag"] = Sequence(
-            length=data_dict["action.stiffness_diag"].shape[1], feature=Value(dtype="float32", id=None)
+    if "action.stiffness_diag.trans" in data_dict:
+        features["action.stiffness_diag.trans"] = Sequence(
+            length=data_dict["action.stiffness_diag.trans"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "action.stiffness_diag.rot" in data_dict:
+        features["action.stiffness_diag.rot"] = Sequence(
+            length=data_dict["action.stiffness_diag.rot"].shape[1], feature=Value(dtype="float32", id=None)
         )
     if "action.gripper" in data_dict:
         features["action.gripper"] = Sequence(
