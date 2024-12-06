@@ -50,7 +50,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         image_transforms: Callable | None = None,
         delta_timestamps: dict[list[float]] | None = None,
         video_backend: str | None = None,
-        ignore_videos: bool | None = True,
+        ignore_videos: bool | None = False,
     ):
         super().__init__()
         self.repo_id = repo_id
@@ -209,6 +209,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         obj.split = split
         obj.image_transforms = transform
         obj.delta_timestamps = delta_timestamps
+        obj.ignore_videos = False
         obj.hf_dataset = hf_dataset
         obj.episode_data_index = episode_data_index
         obj.stats = stats
