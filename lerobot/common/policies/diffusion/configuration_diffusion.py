@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, Optional
 
 
 @dataclass
@@ -101,37 +102,37 @@ class DiffusionConfig:
     horizon: int = 16
     n_action_steps: int = 8
 
-    input_shapes: dict[str, list[int]] = field(
+    input_shapes: Dict[str, List[int]] = field(
         default_factory=lambda: {
             "observation.image": [3, 96, 96],
             "observation.state": [2],
         }
     )
-    output_shapes: dict[str, list[int]] = field(
+    output_shapes: Dict[str, List[int]] = field(
         default_factory=lambda: {
             "action": [2],
         }
     )
 
     # Normalization / Unnormalization
-    input_normalization_modes: dict[str, str] = field(
+    input_normalization_modes: Dict[str, str] = field(
         default_factory=lambda: {
             "observation.image": "mean_std",
             "observation.state": "min_max",
         }
     )
-    output_normalization_modes: dict[str, str] = field(default_factory=lambda: {"action": "min_max"})
+    output_normalization_modes: Dict[str, str] = field(default_factory=lambda: {"action": "min_max"})
 
     # Architecture / modeling.
     # Vision backbone.
     vision_backbone: str = "resnet18"
-    crop_shape: tuple[int, int] | None = (84, 84)
+    crop_shape: Optional[Tuple[int, int]] = (84, 84)
     crop_is_random: bool = True
-    pretrained_backbone_weights: str | None = None
+    pretrained_backbone_weights: Optional[str] = None
     use_group_norm: bool = True
     spatial_softmax_num_keypoints: int = 32
     # Unet.
-    down_dims: tuple[int, ...] = (512, 1024, 2048)
+    down_dims: Tuple[int, ...] = (512, 1024, 2048)
     kernel_size: int = 5
     n_groups: int = 8
     diffusion_step_embed_dim: int = 128
@@ -147,7 +148,7 @@ class DiffusionConfig:
     clip_sample_range: float = 1.0
 
     # Inference
-    num_inference_steps: int | None = None
+    num_inference_steps: Optional[int] = None
 
     # Loss computation
     do_mask_loss_for_padding: bool = False

@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, Optional
 
 
 @dataclass
@@ -23,7 +24,7 @@ class ACTConfig:
     Defaults are configured for training on bimanual Aloha tasks like "insertion" or "transfer".
 
     The parameters you will most likely need to change are the ones which depend on the environment / sensors.
-    Those are: `input_shapes` and 'output_shapes`.
+    Those are: `input_shapes` and 'output_shapes'.
 
     Notes on the inputs and outputs:
         - Either:
@@ -83,6 +84,9 @@ class ACTConfig:
         dropout: Dropout to use in the transformer layers (see code for details).
         kl_weight: The weight to use for the KL-divergence component of the loss if the variational objective
             is enabled. Loss is then calculated as: `reconstruction_loss + kl_weight * kld_loss`.
+        crop_shape: The shape to crop the images to.
+        down_dims: The dimensions to downsample the images to.
+        num_inference_steps: The number of inference steps to use.
     """
 
     # Input / output structure.
@@ -90,26 +94,26 @@ class ACTConfig:
     chunk_size: int = 100
     n_action_steps: int = 100
 
-    input_shapes: dict[str, list[int]] = field(
+    input_shapes: Dict[str, List[int]] = field(
         default_factory=lambda: {
             "observation.images.top": [3, 480, 640],
             "observation.state": [14],
         }
     )
-    output_shapes: dict[str, list[int]] = field(
+    output_shapes: Dict[str, List[int]] = field(
         default_factory=lambda: {
             "action": [14],
         }
     )
 
     # Normalization / Unnormalization
-    input_normalization_modes: dict[str, str] = field(
+    input_normalization_modes: Dict[str, str] = field(
         default_factory=lambda: {
             "observation.images.top": "mean_std",
             "observation.state": "mean_std",
         }
     )
-    output_normalization_modes: dict[str, str] = field(
+    output_normalization_modes: Dict[str, str] = field(
         default_factory=lambda: {
             "action": "mean_std",
         }
@@ -118,7 +122,7 @@ class ACTConfig:
     # Architecture.
     # Vision backbone.
     vision_backbone: str = "resnet18"
-    pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
+    pretrained_backbone_weights: Optional[str] = None
     replace_final_stride_with_dilation: int = False
     # Transformer layers.
     pre_norm: bool = False
@@ -138,11 +142,15 @@ class ACTConfig:
 
     # Inference.
     # Note: the value used in ACT when temporal ensembling is enabled is 0.01.
-    temporal_ensemble_coeff: float | None = None
+    temporal_ensemble_coeff: Optional[float] = None
 
     # Training and loss computation.
     dropout: float = 0.1
     kl_weight: float = 10.0
+
+    crop_shape: Optional[Tuple[int, int]] = (84, 84)
+    down_dims: Tuple[int, ...] = (512, 1024, 2048)
+    num_inference_steps: Optional[int] = None
 
     def __post_init__(self):
         """Input validation (not exhaustive)."""

@@ -22,7 +22,7 @@ The majority of changes here involve removing unused code, unifying naming, and 
 import math
 from collections import deque
 from itertools import chain
-from typing import Callable
+from typing import Callable, Optional, Dict, Tuple, List
 
 import einops
 import numpy as np
@@ -54,8 +54,8 @@ class ACTPolicy(
 
     def __init__(
         self,
-        config: ACTConfig | None = None,
-        dataset_stats: dict[str, dict[str, Tensor]] | None = None,
+        config: Optional[ACTConfig] = None,
+        dataset_stats: Optional[Dict[str, Dict[str, Tensor]]] = None,
     ):
         """
         Args:
@@ -96,7 +96,7 @@ class ACTPolicy(
             self._action_queue = deque([], maxlen=self.config.n_action_steps)
 
     @torch.no_grad
-    def select_action(self, batch: dict[str, Tensor]) -> Tensor:
+    def select_action(self, batch: Dict[str, Tensor]) -> Tensor:
         """Select a single action given environment observations.
 
         This method wraps `select_actions` in order to return one action at a time for execution in the
@@ -131,7 +131,7 @@ class ACTPolicy(
             self._action_queue.extend(actions.transpose(0, 1))
         return self._action_queue.popleft()
 
-    def forward(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
+    def forward(self, batch: Dict[str, Tensor]) -> Dict[str, Tensor]:
         """Run the batch through the model and compute the loss for training or validation."""
         batch = self.normalize_inputs(batch)
         if len(self.expected_image_keys) > 0:
@@ -276,9 +276,9 @@ class ACT(nn.Module):
                    │      │     │     ├─────►│decoder│  │
               ┌────┴────┐ │     │     │      │       │  │
               │         │ │     │ ┌───┴───┬─►│       │  │
-              │ VAE     │ │     │ │       │  └───────┘  │
-              │ encoder │ │     │ │Transf.│             │
-              │         │ │     │ │encoder│             │
+              │ VAE     │ │     │ │Transf.│             │
+              │ encoder │ │     │ │encoder│             │
+              │         │ │     │ │       │             │
               └───▲─────┘ │     │ │       │             │
                   │       │     │ └▲──▲─▲─┘             │
                   │       │     │  │  │ │               │
@@ -375,7 +375,7 @@ class ACT(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, batch: dict[str, Tensor]) -> tuple[Tensor, tuple[Tensor, Tensor] | tuple[None, None]]:
+    def forward(self, batch: Dict[str, Tensor]) -> Tuple[Tensor, Tuple[Optional[Tensor], Optional[Tensor]]]:
         """A forward pass through the Action Chunking Transformer (with optional VAE encoder).
 
         `batch` should have the following structure:
@@ -489,7 +489,7 @@ class ACT(nn.Module):
             all_cam_features = torch.cat(all_cam_features, axis=-1)
             encoder_in_tokens.extend(einops.rearrange(all_cam_features, "b c h w -> (h w) b c"))
             all_cam_pos_embeds = torch.cat(all_cam_pos_embeds, axis=-1)
-            encoder_in_pos_embed.extend(einops.rearrange(all_cam_pos_embeds, "b c h w -> (h w) b c"))
+            encoder_in_pos_embed = einops.rearrange(all_cam_pos_embeds, "(h w) b c -> b (h w) c")
 
         # Stack all tokens along the sequence dimension.
         encoder_in_tokens = torch.stack(encoder_in_tokens, axis=0)
@@ -529,7 +529,7 @@ class ACTEncoder(nn.Module):
         self.norm = nn.LayerNorm(config.dim_model) if config.pre_norm else nn.Identity()
 
     def forward(
-        self, x: Tensor, pos_embed: Tensor | None = None, key_padding_mask: Tensor | None = None
+        self, x: Tensor, pos_embed: Optional[Tensor] = None, key_padding_mask: Optional[Tensor] = None
     ) -> Tensor:
         for layer in self.layers:
             x = layer(x, pos_embed=pos_embed, key_padding_mask=key_padding_mask)
@@ -555,7 +555,7 @@ class ACTEncoderLayer(nn.Module):
         self.activation = get_activation_fn(config.feedforward_activation)
         self.pre_norm = config.pre_norm
 
-    def forward(self, x, pos_embed: Tensor | None = None, key_padding_mask: Tensor | None = None) -> Tensor:
+    def forward(self, x, pos_embed: Optional[Tensor] = None, key_padding_mask: Optional[Tensor] = None) -> Tensor:
         skip = x
         if self.pre_norm:
             x = self.norm1(x)
@@ -587,8 +587,8 @@ class ACTDecoder(nn.Module):
         self,
         x: Tensor,
         encoder_out: Tensor,
-        decoder_pos_embed: Tensor | None = None,
-        encoder_pos_embed: Tensor | None = None,
+        decoder_pos_embed: Optional[Tensor] = None,
+        encoder_pos_embed: Optional[Tensor] = None,
     ) -> Tensor:
         for layer in self.layers:
             x = layer(
@@ -620,15 +620,15 @@ class ACTDecoderLayer(nn.Module):
         self.activation = get_activation_fn(config.feedforward_activation)
         self.pre_norm = config.pre_norm
 
-    def maybe_add_pos_embed(self, tensor: Tensor, pos_embed: Tensor | None) -> Tensor:
+    def maybe_add_pos_embed(self, tensor: Tensor, pos_embed: Optional[Tensor]) -> Tensor:
         return tensor if pos_embed is None else tensor + pos_embed
 
     def forward(
         self,
         x: Tensor,
         encoder_out: Tensor,
-        decoder_pos_embed: Tensor | None = None,
-        encoder_pos_embed: Tensor | None = None,
+        decoder_pos_embed: Optional[Tensor] = None,
+        encoder_pos_embed: Optional[Tensor] = None,
     ) -> Tensor:
         """
         Args:
