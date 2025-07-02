@@ -315,6 +315,10 @@ def to_hf_dataset(data_dict, video) -> Dataset:
     # features["action"] = Sequence(
     #     length=data_dict["action"].shape[1], feature=Value(dtype="float32", id=None)
     # )
+    if "action" in data_dict:
+        features["action"] = Sequence(
+            length=data_dict["action"].shape[1], feature=Value(dtype="float32", id=None)
+        )
     if "action.position" in data_dict:
         features["action.position"] = Sequence(
             length=data_dict["action.position"].shape[1], feature=Value(dtype="float32", id=None)
