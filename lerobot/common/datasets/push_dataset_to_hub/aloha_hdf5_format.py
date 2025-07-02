@@ -279,6 +279,14 @@ def to_hf_dataset(data_dict, video) -> Dataset:
         features["observation.tactile.flow"] = Sequence(
             length=data_dict["observation.tactile.flow"].shape[1], feature=Value(dtype="float32", id=None)
         )
+    if "observation.contactile" in data_dict:
+        features["observation.contactile"] = Sequence(
+            length=data_dict["observation.contactile"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "observation.vive_tracker_pose" in data_dict:
+        features["observation.vive_tracker_pose"] = Sequence(
+            length=data_dict["observation.vive_tracker_pose"].shape[1], feature=Value(dtype="float32", id=None)
+        )
     # if "observation.eef_pos" in data_dict:
     #     features["observation.eef_pos"] = Sequence(
     #         length=data_dict["observation.eef_pos"].shape[1], feature=Value(dtype="float32", id=None)
@@ -310,6 +318,14 @@ def to_hf_dataset(data_dict, video) -> Dataset:
     if "action.position" in data_dict:
         features["action.position"] = Sequence(
             length=data_dict["action.position"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "action.position_cmd" in data_dict:
+        features["action.position_cmd"] = Sequence(
+            length=data_dict["action.position_cmd"].shape[1], feature=Value(dtype="float32", id=None)
+        )
+    if "action.rotation_cmd" in data_dict:
+        features["action.rotation_cmd"] = Sequence(
+            length=data_dict["action.rotation_cmd"].shape[1], feature=Value(dtype="float32", id=None)
         )
     if "action.rotation_ortho6" in data_dict:
         features["action.rotation_ortho6"] = Sequence(
