@@ -295,6 +295,7 @@ class ACT(nn.Module):
         self.use_robot_state = "observation.state" in config.input_shapes
         self.use_images = any(k.startswith("observation.image") for k in config.input_shapes)
         self.use_env_state = "observation.environment_state" in config.input_shapes
+        self.use_qpos = "observation.qpos" in config.input_shapes
         if self.config.use_vae:
             self.vae_encoder = ACTEncoder(config, is_vae_encoder=True)
             self.vae_encoder_cls_embed = nn.Embedding(1, config.dim_model)
@@ -302,6 +303,10 @@ class ACT(nn.Module):
             if self.use_robot_state:
                 self.vae_encoder_robot_state_input_proj = nn.Linear(
                     config.input_shapes["observation.state"][0], config.dim_model
+                )
+            if self.use_qpos:
+                self.vae_encoder_qpos_input_proj = nn.Linear(
+                    config.input_shapes["observation.qpos"][0], config.dim_model
                 )
             # Projection layer for action (joint-space target) to hidden dimension.
             self.vae_encoder_action_input_proj = nn.Linear(
@@ -313,6 +318,8 @@ class ACT(nn.Module):
             # dimension.
             num_input_token_encoder = 1 + config.chunk_size
             if self.use_robot_state:
+                num_input_token_encoder += 1
+            if self.use_qpos:
                 num_input_token_encoder += 1
             self.register_buffer(
                 "vae_encoder_pos_enc",
@@ -336,7 +343,7 @@ class ACT(nn.Module):
         self.decoder = ACTDecoder(config)
 
         # Transformer encoder input projections. The tokens will be structured like
-        # [latent, (robot_state), (env_state), (image_feature_map_pixels)].
+        # [latent, (robot_state), (env_state or qpos), (image_feature_map_pixels)].
         if self.use_robot_state:
             self.encoder_robot_state_input_proj = nn.Linear(
                 config.input_shapes["observation.state"][0], config.dim_model
@@ -344,6 +351,10 @@ class ACT(nn.Module):
         if self.use_env_state:
             self.encoder_env_state_input_proj = nn.Linear(
                 config.input_shapes["observation.environment_state"][0], config.dim_model
+            )
+        if self.use_qpos:
+            self.encoder_qpos_input_proj = nn.Linear(
+                config.input_shapes["observation.qpos"][0], config.dim_model
             )
         self.encoder_latent_input_proj = nn.Linear(config.latent_dim, config.dim_model)
         if self.use_images:
@@ -354,7 +365,7 @@ class ACT(nn.Module):
         n_1d_tokens = 1  # for the latent
         if self.use_robot_state:
             n_1d_tokens += 1
-        if self.use_env_state:
+        if self.use_env_state or self.use_qpos:
             n_1d_tokens += 1
         self.encoder_1d_feature_pos_embed = nn.Embedding(n_1d_tokens, config.dim_model)
         if self.use_images:
@@ -399,11 +410,15 @@ class ACT(nn.Module):
                 "action" in batch
             ), "actions must be provided when using the variational objective in training mode."
 
-        batch_size = (
-            batch["observation.images"]
-            if "observation.images" in batch
-            else batch["observation.environment_state"]
-        ).shape[0]
+        # --- batch_size determination ---
+        if "observation.images" in batch:
+            batch_size = batch["observation.images"].shape[0]
+        elif "observation.environment_state" in batch:
+            batch_size = batch["observation.environment_state"].shape[0]
+        elif "observation.qpos" in batch:
+            batch_size = batch["observation.qpos"].shape[0]
+        else:
+            raise ValueError("No valid input key for batch size found.")
 
         # Prepare the latent for input to the transformer encoder.
         if self.config.use_vae and "action" in batch:
@@ -418,6 +433,10 @@ class ACT(nn.Module):
 
             if self.use_robot_state:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
+            elif self.use_qpos:
+                qpos_embed = self.vae_encoder_qpos_input_proj(batch["observation.qpos"])
+                qpos_embed = qpos_embed.unsqueeze(1)  # (B, 1, D)
+                vae_encoder_input = [cls_embed, qpos_embed, action_embed]  # (B, S+2, D)
             else:
                 vae_encoder_input = [cls_embed, action_embed]
             vae_encoder_input = torch.cat(vae_encoder_input, axis=1)
@@ -429,10 +448,18 @@ class ACT(nn.Module):
             # Prepare key padding mask for the transformer encoder. We have 1 or 2 extra tokens at the start of the
             # sequence depending whether we use the input states or not (cls and robot state)
             # False means not a padding token.
+            if "observation.state" in batch:
+                device = batch["observation.state"].device
+            elif "observation.environment_state" in batch:
+                device = batch["observation.environment_state"].device
+            elif "observation.qpos" in batch:
+                device = batch["observation.qpos"].device
+            else:
+                raise ValueError("No valid input key for device found.")
             cls_joint_is_pad = torch.full(
-                (batch_size, 2 if self.use_robot_state else 1),
+                (batch_size, 2 if self.use_robot_state or self.use_qpos else 1),
                 False,
-                device=batch["observation.state"].device,
+                device=device,
             )
             key_padding_mask = torch.cat(
                 [cls_joint_is_pad, batch["action_is_pad"]], axis=1
@@ -456,7 +483,7 @@ class ACT(nn.Module):
             mu = log_sigma_x2 = None
             # TODO(rcadene, alexander-soare): remove call to `.to` to speedup forward ; precompute and use buffer
             latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(
-                batch["observation.state"].device
+                batch["observation.qpos"].device if self.use_qpos else batch["observation.state"].device
             )
 
         # Prepare transformer encoder inputs.
@@ -465,10 +492,14 @@ class ACT(nn.Module):
         # Robot state token.
         if self.use_robot_state:
             encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch["observation.state"]))
-        # Environment state token.
+        # Environment state or qpos token.
         if self.use_env_state:
             encoder_in_tokens.append(
                 self.encoder_env_state_input_proj(batch["observation.environment_state"])
+            )
+        elif self.use_qpos:
+            encoder_in_tokens.append(
+                self.encoder_qpos_input_proj(batch["observation.qpos"])
             )
 
         # Camera observation features and positional embeddings.
