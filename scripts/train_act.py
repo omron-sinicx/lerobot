@@ -37,7 +37,6 @@ DATASET_ROOT = config_dict.get("dataset_root", None)
 REPO_ID = config_dict.get("repo_id", None)
 
 delta_timestamps = {
-    "observation.qpos": [0.0],
     "observation.ft": [0.0],
     "observation.eef.position": [0.0],
     "observation.eef.rotation_ortho6": [0.0],

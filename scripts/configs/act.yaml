@@ -1,5 +1,4 @@
 input_shapes:
-  observation.qpos: [6]
   observation.ft: [6]
   observation.eef.position: [3]
   observation.eef.rotation_ortho6: [6]
@@ -8,7 +7,11 @@ input_shapes:
 output_shapes:
   action: [6]
 input_normalization_modes:
-  observation.qpos: mean_std
+  observation.ft: mean_std
+  observation.eef.position: mean_std
+  observation.eef.rotation_ortho6: mean_std
+  observation.vive_tracker_pose: mean_std
+  observation.contactile: mean_std
 output_normalization_modes:
   action: mean_std
 
