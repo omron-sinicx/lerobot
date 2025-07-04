@@ -1,7 +1,5 @@
-"""This scripts demonstrates how to train Diffusion Policy on the PushT environment.
-
-Once you have trained a model with this script, you can try to evaluate it on
-examples/2_evaluate_pretrained_policy.py
+"""
+This script is used to train ACT policy on the dataset.
 """
 
 from pathlib import Path
@@ -15,7 +13,7 @@ from lerobot.common.policies.act.modeling_act import ACTPolicy
 from copy import deepcopy
 
 # Create a directory to store the training checkpoint.
-output_directory = Path("outputs/train/example_pusht_diffusion")
+output_directory = Path("outputs/train/act_contactile_300_deltas_act")
 output_directory.mkdir(parents=True, exist_ok=True)
 
 # Number of offline training steps (we'll only do offline training for this example.)
@@ -40,6 +38,11 @@ REPO_ID = config_dict.get("repo_id", None)
 
 delta_timestamps = {
     "observation.qpos": [0.0],
+    "observation.ft": [0.0],
+    "observation.eef.position": [0.0],
+    "observation.eef.rotation_ortho6": [0.0],
+    "observation.vive_tracker_pose": [0.0],
+    "observation.contactile": [0.0],
     "action": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4],
 }
 
@@ -74,7 +77,6 @@ step = 0
 done = False
 while not done:
     for batch in dataloader:
-        batch["observation.qpos"] = batch["observation.qpos"][:, -1, :]  # (B, D)
         batch = {k: v.to(device, non_blocking=True) for k, v in batch.items()}
         output_dict = policy.forward(batch)
         loss = output_dict["loss"]

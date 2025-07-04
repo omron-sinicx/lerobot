@@ -1,0 +1,20 @@
+input_shapes:
+  observation.qpos: [6]
+  observation.ft: [6]
+  observation.eef.position: [3]
+  observation.eef.rotation_ortho6: [6]
+  observation.vive_tracker_pose: [7]
+  observation.contactile: [33]
+output_shapes:
+  action: [6]
+input_normalization_modes:
+  observation.qpos: mean_std
+output_normalization_modes:
+  action: mean_std
+
+dataset_root: /data2/tactile_retrieval/datasets/
+repo_id: contactile_300_deltas_act
+
+chunk_size: 15
+n_action_steps: 1
+n_obs_steps: 1

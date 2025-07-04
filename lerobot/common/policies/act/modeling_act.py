@@ -296,6 +296,12 @@ class ACT(nn.Module):
         self.use_images = any(k.startswith("observation.image") for k in config.input_shapes)
         self.use_env_state = "observation.environment_state" in config.input_shapes
         self.use_qpos = "observation.qpos" in config.input_shapes
+        self.use_ft = "observation.ft" in config.input_shapes
+        self.use_eef_position = "observation.eef.position" in config.input_shapes
+        self.use_eef_rotation_ortho6 = "observation.eef.rotation_ortho6" in config.input_shapes
+        self.use_vive_tracker_pose = "observation.vive_tracker_pose" in config.input_shapes
+        self.use_contactile = "observation.contactile" in config.input_shapes
+
         if self.config.use_vae:
             self.vae_encoder = ACTEncoder(config, is_vae_encoder=True)
             self.vae_encoder_cls_embed = nn.Embedding(1, config.dim_model)
@@ -307,6 +313,26 @@ class ACT(nn.Module):
             if self.use_qpos:
                 self.vae_encoder_qpos_input_proj = nn.Linear(
                     config.input_shapes["observation.qpos"][0], config.dim_model
+                )
+            if self.use_ft:
+                self.vae_encoder_ft_input_proj = nn.Linear(
+                    config.input_shapes["observation.ft"][0], config.dim_model
+                )
+            if self.use_eef_position:
+                self.vae_encoder_eef_position_input_proj = nn.Linear(
+                    config.input_shapes["observation.eef.position"][0], config.dim_model
+                )
+            if self.use_eef_rotation_ortho6:
+                self.vae_encoder_eef_rotation_ortho6_input_proj = nn.Linear(
+                    config.input_shapes["observation.eef.rotation_ortho6"][0], config.dim_model
+                )
+            if self.use_vive_tracker_pose:
+                self.vae_encoder_vive_tracker_pose_input_proj = nn.Linear(
+                    config.input_shapes["observation.vive_tracker_pose"][0], config.dim_model
+                )
+            if self.use_contactile:
+                self.vae_encoder_contactile_input_proj = nn.Linear(
+                    config.input_shapes["observation.contactile"][0], config.dim_model
                 )
             # Projection layer for action (joint-space target) to hidden dimension.
             self.vae_encoder_action_input_proj = nn.Linear(
@@ -320,6 +346,16 @@ class ACT(nn.Module):
             if self.use_robot_state:
                 num_input_token_encoder += 1
             if self.use_qpos:
+                num_input_token_encoder += 1
+            if self.use_ft:
+                num_input_token_encoder += 1
+            if self.use_eef_position:
+                num_input_token_encoder += 1
+            if self.use_eef_rotation_ortho6:
+                num_input_token_encoder += 1
+            if self.use_vive_tracker_pose:
+                num_input_token_encoder += 1
+            if self.use_contactile:
                 num_input_token_encoder += 1
             self.register_buffer(
                 "vae_encoder_pos_enc",
@@ -355,6 +391,26 @@ class ACT(nn.Module):
         if self.use_qpos:
             self.encoder_qpos_input_proj = nn.Linear(
                 config.input_shapes["observation.qpos"][0], config.dim_model
+            )
+        if self.use_ft:
+            self.encoder_ft_input_proj = nn.Linear(
+                config.input_shapes["observation.ft"][0], config.dim_model
+            )
+        if self.use_eef_position:
+            self.encoder_eef_position_input_proj = nn.Linear(
+                config.input_shapes["observation.eef.position"][0], config.dim_model
+            )
+        if self.use_eef_rotation_ortho6:
+            self.encoder_eef_rotation_ortho6_input_proj = nn.Linear(
+                config.input_shapes["observation.eef.rotation_ortho6"][0], config.dim_model
+            )
+        if self.use_vive_tracker_pose:
+            self.encoder_vive_tracker_pose_input_proj = nn.Linear(
+                config.input_shapes["observation.vive_tracker_pose"][0], config.dim_model
+            )
+        if self.use_contactile:
+            self.encoder_contactile_input_proj = nn.Linear(
+                config.input_shapes["observation.contactile"][0], config.dim_model
             )
         self.encoder_latent_input_proj = nn.Linear(config.latent_dim, config.dim_model)
         if self.use_images:
@@ -426,6 +482,7 @@ class ACT(nn.Module):
             cls_embed = einops.repeat(
                 self.vae_encoder_cls_embed.weight, "1 d -> b 1 d", b=batch_size
             )  # (B, 1, D)
+            
             if self.use_robot_state:
                 robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"])
                 robot_state_embed = robot_state_embed.unsqueeze(1)  # (B, 1, D)
@@ -434,16 +491,65 @@ class ACT(nn.Module):
             if self.use_robot_state:
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
             elif self.use_qpos:
-                qpos_embed = self.vae_encoder_qpos_input_proj(batch["observation.qpos"])
+                # Remove temporal dimension if present (take the last timestep)
+                qpos_data = batch["observation.qpos"]
+                if qpos_data.dim() == 3:  # (B, T, D) -> (B, D)
+                    qpos_data = qpos_data[:, -1, :]
+                qpos_embed = self.vae_encoder_qpos_input_proj(qpos_data)
                 qpos_embed = qpos_embed.unsqueeze(1)  # (B, 1, D)
                 vae_encoder_input = [cls_embed, qpos_embed, action_embed]  # (B, S+2, D)
+            elif self.use_ft:
+                # Remove temporal dimension if present (take the last timestep)
+                ft_data = batch["observation.ft"]
+                if ft_data.dim() == 3:  # (B, T, D) -> (B, D)
+                    ft_data = ft_data[:, -1, :]
+                ft_embed = self.vae_encoder_ft_input_proj(ft_data)
+                ft_embed = ft_embed.unsqueeze(1)  # (B, 1, D)
+                vae_encoder_input = [cls_embed, ft_embed, action_embed]  # (B, S+2, D)
+            elif self.use_eef_position:
+                # Remove temporal dimension if present (take the last timestep)
+                eef_position_data = batch["observation.eef.position"]
+                if eef_position_data.dim() == 3:  # (B, T, D) -> (B, D)
+                    eef_position_data = eef_position_data[:, -1, :]
+                eef_position_embed = self.vae_encoder_eef_position_input_proj(eef_position_data)
+                eef_position_embed = eef_position_embed.unsqueeze(1)  # (B, 1, D)
+                vae_encoder_input = [cls_embed, eef_position_embed, action_embed]  # (B, S+2, D)
+            elif self.use_eef_rotation_ortho6:
+                # Remove temporal dimension if present (take the last timestep)
+                eef_rotation_ortho6_data = batch["observation.eef.rotation_ortho6"]
+                if eef_rotation_ortho6_data.dim() == 3:  # (B, T, D) -> (B, D)
+                    eef_rotation_ortho6_data = eef_rotation_ortho6_data[:, -1, :]
+                eef_rotation_ortho6_embed = self.vae_encoder_eef_rotation_ortho6_input_proj(eef_rotation_ortho6_data)
+                eef_rotation_ortho6_embed = eef_rotation_ortho6_embed.unsqueeze(1)  # (B, 1, D)
+                vae_encoder_input = [cls_embed, eef_rotation_ortho6_embed, action_embed]  # (B, S+2, D)
+            elif self.use_vive_tracker_pose:
+                # Remove temporal dimension if present (take the last timestep)
+                vive_tracker_pose_data = batch["observation.vive_tracker_pose"]
+                if vive_tracker_pose_data.dim() == 3:  # (B, T, D) -> (B, D)
+                    vive_tracker_pose_data = vive_tracker_pose_data[:, -1, :]
+                vive_tracker_pose_embed = self.vae_encoder_vive_tracker_pose_input_proj(vive_tracker_pose_data)
+                vive_tracker_pose_embed = vive_tracker_pose_embed.unsqueeze(1)  # (B, 1, D)
+                vae_encoder_input = [cls_embed, vive_tracker_pose_embed, action_embed]  # (B, S+2, D)
+            elif self.use_contactile:
+                # Remove temporal dimension if present (take the last timestep)
+                contactile_data = batch["observation.contactile"]
+                if contactile_data.dim() == 3:  # (B, T, D) -> (B, D)
+                    contactile_data = contactile_data[:, -1, :]
+                contactile_embed = self.vae_encoder_contactile_input_proj(contactile_data)
+                contactile_embed = contactile_embed.unsqueeze(1)  # (B, 1, D)
+                vae_encoder_input = [cls_embed, contactile_embed, action_embed]  # (B, S+2, D)
             else:
                 vae_encoder_input = [cls_embed, action_embed]
+            
             vae_encoder_input = torch.cat(vae_encoder_input, axis=1)
 
             # Prepare fixed positional embedding.
             # Note: detach() shouldn't be necessary but leaving it the same as the original code just in case.
             pos_embed = self.vae_encoder_pos_enc.clone().detach()  # (1, S+2, D)
+            
+            # Slice positional embeddings to match actual sequence length
+            actual_seq_len = vae_encoder_input.shape[1]
+            pos_embed = pos_embed[:, :actual_seq_len, :]
 
             # Prepare key padding mask for the transformer encoder. We have 1 or 2 extra tokens at the start of the
             # sequence depending whether we use the input states or not (cls and robot state)
@@ -497,10 +603,44 @@ class ACT(nn.Module):
             encoder_in_tokens.append(
                 self.encoder_env_state_input_proj(batch["observation.environment_state"])
             )
-        elif self.use_qpos:
+        if self.use_qpos:
+            # Remove temporal dimension if present (take the last timestep)
+            qpos_data = batch["observation.qpos"]
+            if qpos_data.dim() == 3:  # (B, T, D) -> (B, D)
+                qpos_data = qpos_data[:, -1, :]
             encoder_in_tokens.append(
-                self.encoder_qpos_input_proj(batch["observation.qpos"])
+                self.encoder_qpos_input_proj(qpos_data)
             )
+        if self.use_ft:
+            # Remove temporal dimension if present (take the last timestep)
+            ft_data = batch["observation.ft"]
+            if ft_data.dim() == 3:  # (B, T, D) -> (B, D)
+                ft_data = ft_data[:, -1, :]
+            encoder_in_tokens.append(self.encoder_ft_input_proj(ft_data))
+        if self.use_eef_position:
+            # Remove temporal dimension if present (take the last timestep)
+            eef_position_data = batch["observation.eef.position"]
+            if eef_position_data.dim() == 3:  # (B, T, D) -> (B, D)
+                eef_position_data = eef_position_data[:, -1, :]
+            encoder_in_tokens.append(self.encoder_eef_position_input_proj(eef_position_data))
+        if self.use_eef_rotation_ortho6:
+            # Remove temporal dimension if present (take the last timestep)
+            eef_rotation_ortho6_data = batch["observation.eef.rotation_ortho6"]
+            if eef_rotation_ortho6_data.dim() == 3:  # (B, T, D) -> (B, D)
+                eef_rotation_ortho6_data = eef_rotation_ortho6_data[:, -1, :]
+            encoder_in_tokens.append(self.encoder_eef_rotation_ortho6_input_proj(eef_rotation_ortho6_data))
+        if self.use_vive_tracker_pose:
+            # Remove temporal dimension if present (take the last timestep)
+            vive_tracker_pose_data = batch["observation.vive_tracker_pose"]
+            if vive_tracker_pose_data.dim() == 3:  # (B, T, D) -> (B, D)
+                vive_tracker_pose_data = vive_tracker_pose_data[:, -1, :]
+            encoder_in_tokens.append(self.encoder_vive_tracker_pose_input_proj(vive_tracker_pose_data))
+        if self.use_contactile:
+            # Remove temporal dimension if present (take the last timestep)
+            contactile_data = batch["observation.contactile"]
+            if contactile_data.dim() == 3:  # (B, T, D) -> (B, D)
+                contactile_data = contactile_data[:, -1, :]
+            encoder_in_tokens.append(self.encoder_contactile_input_proj(contactile_data))
 
         # Camera observation features and positional embeddings.
         if self.use_images:
@@ -524,7 +664,27 @@ class ACT(nn.Module):
 
         # Stack all tokens along the sequence dimension.
         encoder_in_tokens = torch.stack(encoder_in_tokens, axis=0)
-        encoder_in_pos_embed = torch.stack(encoder_in_pos_embed, axis=0)
+        
+        # Create positional embeddings for the actual number of tokens
+        actual_num_tokens = len(encoder_in_tokens)
+        if actual_num_tokens > len(encoder_in_pos_embed):
+            # Need to create more positional embeddings
+            additional_pos_embeds = torch.zeros(
+                actual_num_tokens - len(encoder_in_pos_embed), 
+                1, 
+                self.config.dim_model,
+                device=encoder_in_tokens.device,
+                dtype=encoder_in_tokens.dtype
+            )
+            # First stack the existing pos embeds, then cat with additional ones
+            encoder_in_pos_embed = torch.stack(encoder_in_pos_embed, axis=0)
+            encoder_in_pos_embed = torch.cat([encoder_in_pos_embed, additional_pos_embeds], dim=0)
+        else:
+            # Slice to match actual number of tokens, then stack
+            encoder_in_pos_embed = encoder_in_pos_embed[:actual_num_tokens]
+            encoder_in_pos_embed = torch.stack(encoder_in_pos_embed, axis=0)
+        
+
 
         # Forward pass through the transformer modules.
         encoder_out = self.encoder(encoder_in_tokens, pos_embed=encoder_in_pos_embed)
