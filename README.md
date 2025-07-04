@@ -1,3 +1,22 @@
+# LeRobot with contactile data
+
+## 1. Format the dataset for ACT
+ACT policy requires the action to be `"action"`, rather than `"action.position_cmd"` and `"action.rotation_cmd"`.
+
+This script will concatenate the two and save the dataset in lerobot format.
+> [!NOTE]
+> This script updates the dataset directly. Make a copy of the dataset if you want to keep the original.
+
+```bash
+python lerobot/scripts/format_lerobot_dataset_for_act.py --dataset_path /data2/tactile_retrieval/datasets/contactile_300_deltas_act
+```
+
+## 2. Train the ACT policy
+```bash
+python lerobot/scripts/train_act.py
+```
+This reads the config from `lerobot/scripts/configs/act.yaml`. 
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="media/lerobot-logo-thumbnail.png">
