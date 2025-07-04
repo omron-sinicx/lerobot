@@ -357,6 +357,10 @@ class ACT(nn.Module):
                 num_input_token_encoder += 1
             if self.use_contactile:
                 num_input_token_encoder += 1
+            # Add extra token for fallback case where eef.position is used even if not configured
+            if not any([self.use_robot_state, self.use_qpos, self.use_ft, self.use_eef_position, 
+                       self.use_eef_rotation_ortho6, self.use_vive_tracker_pose, self.use_contactile]):
+                num_input_token_encoder += 1
             self.register_buffer(
                 "vae_encoder_pos_enc",
                 create_sinusoidal_pos_embedding(num_input_token_encoder, config.dim_model).unsqueeze(0),
@@ -423,6 +427,21 @@ class ACT(nn.Module):
             n_1d_tokens += 1
         if self.use_env_state or self.use_qpos:
             n_1d_tokens += 1
+        if self.use_ft:
+            n_1d_tokens += 1
+        if self.use_eef_position:
+            n_1d_tokens += 1
+        if self.use_eef_rotation_ortho6:
+            n_1d_tokens += 1
+        if self.use_vive_tracker_pose:
+            n_1d_tokens += 1
+        if self.use_contactile:
+            n_1d_tokens += 1
+        # Add extra token for fallback case where eef.position is used even if not configured
+        if not any([self.use_robot_state, self.use_env_state, self.use_qpos, self.use_ft, 
+                   self.use_eef_position, self.use_eef_rotation_ortho6, self.use_vive_tracker_pose, 
+                   self.use_contactile]):
+            n_1d_tokens += 1
         self.encoder_1d_feature_pos_embed = nn.Embedding(n_1d_tokens, config.dim_model)
         if self.use_images:
             self.encoder_cam_feat_pos_embed = ACTSinusoidalPositionEmbedding2d(config.dim_model // 2)
@@ -448,12 +467,21 @@ class ACT(nn.Module):
         `batch` should have the following structure:
         {
             "observation.state" (optional): (B, state_dim) batch of robot states.
+            "observation.qpos" (optional): (B, qpos_dim) batch of joint positions.
+            "observation.ft" (optional): (B, ft_dim) batch of force/torque data.
+            "observation.eef.position" (optional): (B, position_dim) batch of end-effector positions.
+            "observation.eef.rotation_ortho6" (optional): (B, rotation_dim) batch of end-effector rotations.
+            "observation.vive_tracker_pose" (optional): (B, pose_dim) batch of Vive tracker poses.
+            "observation.contactile" (optional): (B, contactile_dim) batch of contactile sensor data.
 
             "observation.images": (B, n_cameras, C, H, W) batch of images.
                 AND/OR
             "observation.environment_state": (B, env_dim) batch of environment states.
 
             "action" (optional, only if training with VAE): (B, chunk_size, action dim) batch of actions.
+            
+            Note: At least one state observation must be provided. If none of the configured state observations
+            are available, the model will fallback to using "observation.eef.position" if available.
         }
 
         Returns:
@@ -473,6 +501,8 @@ class ACT(nn.Module):
             batch_size = batch["observation.environment_state"].shape[0]
         elif "observation.qpos" in batch:
             batch_size = batch["observation.qpos"].shape[0]
+        elif "observation.eef.position" in batch:
+            batch_size = batch["observation.eef.position"].shape[0]
         else:
             raise ValueError("No valid input key for batch size found.")
 
@@ -483,12 +513,11 @@ class ACT(nn.Module):
                 self.vae_encoder_cls_embed.weight, "1 d -> b 1 d", b=batch_size
             )  # (B, 1, D)
             
-            if self.use_robot_state:
-                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"])
-                robot_state_embed = robot_state_embed.unsqueeze(1)  # (B, 1, D)
             action_embed = self.vae_encoder_action_input_proj(batch["action"])  # (B, S, D)
 
             if self.use_robot_state:
+                robot_state_embed = self.vae_encoder_robot_state_input_proj(batch["observation.state"])
+                robot_state_embed = robot_state_embed.unsqueeze(1)  # (B, 1, D)
                 vae_encoder_input = [cls_embed, robot_state_embed, action_embed]  # (B, S+2, D)
             elif self.use_qpos:
                 # Remove temporal dimension if present (take the last timestep)
@@ -539,7 +568,16 @@ class ACT(nn.Module):
                 contactile_embed = contactile_embed.unsqueeze(1)  # (B, 1, D)
                 vae_encoder_input = [cls_embed, contactile_embed, action_embed]  # (B, S+2, D)
             else:
-                vae_encoder_input = [cls_embed, action_embed]
+                # Fallback: if no state observation is configured, try to use eef.position if available
+                if "observation.eef.position" in batch:
+                    eef_position_data = batch["observation.eef.position"]
+                    if eef_position_data.dim() == 3:  # (B, T, D) -> (B, D)
+                        eef_position_data = eef_position_data[:, -1, :]
+                    eef_position_embed = self.vae_encoder_eef_position_input_proj(eef_position_data)
+                    eef_position_embed = eef_position_embed.unsqueeze(1)  # (B, 1, D)
+                    vae_encoder_input = [cls_embed, eef_position_embed, action_embed]  # (B, S+2, D)
+                else:
+                    vae_encoder_input = [cls_embed, action_embed]
             
             vae_encoder_input = torch.cat(vae_encoder_input, axis=1)
 
@@ -560,10 +598,20 @@ class ACT(nn.Module):
                 device = batch["observation.environment_state"].device
             elif "observation.qpos" in batch:
                 device = batch["observation.qpos"].device
+            elif "observation.eef.position" in batch:
+                device = batch["observation.eef.position"].device
             else:
                 raise ValueError("No valid input key for device found.")
+            # Determine if we have a state token (including fallback cases)
+            has_state_token = (self.use_robot_state or self.use_qpos or self.use_eef_position or 
+                             self.use_ft or self.use_eef_rotation_ortho6 or self.use_vive_tracker_pose or 
+                             self.use_contactile or 
+                             (not any([self.use_robot_state, self.use_qpos, self.use_ft, self.use_eef_position, 
+                                      self.use_eef_rotation_ortho6, self.use_vive_tracker_pose, self.use_contactile]) 
+                              and "observation.eef.position" in batch))
+            
             cls_joint_is_pad = torch.full(
-                (batch_size, 2 if self.use_robot_state or self.use_qpos else 1),
+                (batch_size, 2 if has_state_token else 1),
                 False,
                 device=device,
             )
@@ -588,21 +636,39 @@ class ACT(nn.Module):
             # When not using the VAE encoder, we set the latent to be all zeros.
             mu = log_sigma_x2 = None
             # TODO(rcadene, alexander-soare): remove call to `.to` to speedup forward ; precompute and use buffer
-            latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(
-                batch["observation.qpos"].device if self.use_qpos else batch["observation.state"].device
-            )
+            if self.use_qpos:
+                device = batch["observation.qpos"].device
+            elif self.use_robot_state:
+                device = batch["observation.state"].device
+            elif self.use_eef_position:
+                device = batch["observation.eef.position"].device
+            else:
+                # Fallback to any available observation for device
+                for key in ["observation.qpos", "observation.state", "observation.eef.position", "observation.ft", "observation.eef.rotation_ortho6", "observation.vive_tracker_pose", "observation.contactile"]:
+                    if key in batch:
+                        device = batch[key].device
+                        break
+                else:
+                    raise ValueError("No valid input key for device found.")
+            latent_sample = torch.zeros([batch_size, self.config.latent_dim], dtype=torch.float32).to(device)
 
         # Prepare transformer encoder inputs.
         encoder_in_tokens = [self.encoder_latent_input_proj(latent_sample)]
         encoder_in_pos_embed = list(self.encoder_1d_feature_pos_embed.weight.unsqueeze(1))
+        
+        # Track if we've added any state observation
+        state_added = False
+        
         # Robot state token.
         if self.use_robot_state:
             encoder_in_tokens.append(self.encoder_robot_state_input_proj(batch["observation.state"]))
+            state_added = True
         # Environment state or qpos token.
         if self.use_env_state:
             encoder_in_tokens.append(
                 self.encoder_env_state_input_proj(batch["observation.environment_state"])
             )
+            state_added = True
         if self.use_qpos:
             # Remove temporal dimension if present (take the last timestep)
             qpos_data = batch["observation.qpos"]
@@ -611,36 +677,54 @@ class ACT(nn.Module):
             encoder_in_tokens.append(
                 self.encoder_qpos_input_proj(qpos_data)
             )
+            state_added = True
         if self.use_ft:
             # Remove temporal dimension if present (take the last timestep)
             ft_data = batch["observation.ft"]
             if ft_data.dim() == 3:  # (B, T, D) -> (B, D)
                 ft_data = ft_data[:, -1, :]
             encoder_in_tokens.append(self.encoder_ft_input_proj(ft_data))
+            state_added = True
         if self.use_eef_position:
             # Remove temporal dimension if present (take the last timestep)
             eef_position_data = batch["observation.eef.position"]
             if eef_position_data.dim() == 3:  # (B, T, D) -> (B, D)
                 eef_position_data = eef_position_data[:, -1, :]
             encoder_in_tokens.append(self.encoder_eef_position_input_proj(eef_position_data))
+            state_added = True
         if self.use_eef_rotation_ortho6:
             # Remove temporal dimension if present (take the last timestep)
             eef_rotation_ortho6_data = batch["observation.eef.rotation_ortho6"]
             if eef_rotation_ortho6_data.dim() == 3:  # (B, T, D) -> (B, D)
                 eef_rotation_ortho6_data = eef_rotation_ortho6_data[:, -1, :]
             encoder_in_tokens.append(self.encoder_eef_rotation_ortho6_input_proj(eef_rotation_ortho6_data))
+            state_added = True
         if self.use_vive_tracker_pose:
             # Remove temporal dimension if present (take the last timestep)
             vive_tracker_pose_data = batch["observation.vive_tracker_pose"]
             if vive_tracker_pose_data.dim() == 3:  # (B, T, D) -> (B, D)
                 vive_tracker_pose_data = vive_tracker_pose_data[:, -1, :]
             encoder_in_tokens.append(self.encoder_vive_tracker_pose_input_proj(vive_tracker_pose_data))
+            state_added = True
         if self.use_contactile:
             # Remove temporal dimension if present (take the last timestep)
             contactile_data = batch["observation.contactile"]
             if contactile_data.dim() == 3:  # (B, T, D) -> (B, D)
                 contactile_data = contactile_data[:, -1, :]
             encoder_in_tokens.append(self.encoder_contactile_input_proj(contactile_data))
+            state_added = True
+            
+        # Fallback: if no state observation was added, try to add eef.position if available
+        if not state_added and "observation.eef.position" in batch:
+            eef_position_data = batch["observation.eef.position"]
+            if eef_position_data.dim() == 3:  # (B, T, D) -> (B, D)
+                eef_position_data = eef_position_data[:, -1, :]
+            encoder_in_tokens.append(self.encoder_eef_position_input_proj(eef_position_data))
+            state_added = True
+            
+        # If still no state added, raise an error
+        if not state_added:
+            raise ValueError("No state observation available. At least one of the following must be present: observation.state, observation.environment_state, observation.qpos, observation.ft, observation.eef.position, observation.eef.rotation_ortho6, observation.vive_tracker_pose, observation.contactile")
 
         # Camera observation features and positional embeddings.
         if self.use_images:

@@ -176,5 +176,6 @@ class ACTConfig:
             not any(k.startswith("observation.image") for k in self.input_shapes)
             and "observation.environment_state" not in self.input_shapes
             and "observation.qpos" not in self.input_shapes
+            and "observation.eef.position" not in self.input_shapes
         ):
             raise ValueError("You must provide at least one image, the environment state, or qpos among the inputs.")
