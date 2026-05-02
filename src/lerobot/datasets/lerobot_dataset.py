@@ -16,6 +16,7 @@
 import contextlib
 import logging
 import shutil
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -26,7 +27,7 @@ import PIL.Image
 import torch
 import torch.utils
 from datasets import concatenate_datasets, load_dataset
-from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 from huggingface_hub.constants import REPOCARD_NAME
 from huggingface_hub.errors import RevisionNotFoundError
 
@@ -117,6 +118,36 @@ class LeRobotDatasetMetadata:
         allow_patterns: list[str] | str | None = None,
         ignore_patterns: list[str] | str | None = None,
     ) -> None:
+        if isinstance(allow_patterns, list):
+            for idx, fpath in enumerate(allow_patterns, start=1):
+                if (self.root / fpath).is_file():
+                    continue
+
+                while True:
+                    try:
+                        hf_hub_download(
+                            self.repo_id,
+                            str(fpath),
+                            repo_type="dataset",
+                            revision=self.revision,
+                            local_dir=self.root,
+                        )
+                        break
+                    except Exception as exc:
+                        retryable_status = any(
+                            status in str(exc) for status in ("429", "502", "503", "504")
+                        )
+                        if not retryable_status:
+                            raise
+                        logging.warning(
+                            "Transient download error while downloading %s; sleeping before retry",
+                            fpath,
+                        )
+                        time.sleep(300)
+                if idx % 1000 == 0:
+                    logging.info("Downloaded %s/%s dataset files", idx, len(allow_patterns))
+            return
+
         snapshot_download(
             self.repo_id,
             repo_type="dataset",
@@ -341,6 +372,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
+        video_keys: list[str] | None = None,
     ):
         """
         2 modes are available for instantiating this class, depending on 2 different use cases:
@@ -457,6 +489,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.delta_indices = None
         self.batch_encoding_size = batch_encoding_size
         self.episodes_since_last_encoding = 0
+        self.selected_video_keys = set(video_keys) if video_keys is not None else None
 
         # Unused attributes
         self.image_writer = None
@@ -468,6 +501,12 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.meta = LeRobotDatasetMetadata(
             self.repo_id, self.root, self.revision, force_cache_sync=force_cache_sync
         )
+        if self.selected_video_keys is not None:
+            self.meta.info["features"] = {
+                key: ft
+                for key, ft in self.meta.info["features"].items()
+                if ft["dtype"] != "video" or key in self.selected_video_keys
+            }
         if self.episodes is not None and self.meta._version >= packaging.version.parse("v2.1"):
             episodes_stats = [self.meta.episodes_stats[ep_idx] for ep_idx in self.episodes]
             self.stats = aggregate_stats(episodes_stats)
@@ -557,6 +596,33 @@ class LeRobotDataset(torch.utils.data.Dataset):
         allow_patterns: list[str] | str | None = None,
         ignore_patterns: list[str] | str | None = None,
     ) -> None:
+        if isinstance(allow_patterns, list):
+            for idx, fpath in enumerate(allow_patterns, start=1):
+                while True:
+                    try:
+                        hf_hub_download(
+                            self.repo_id,
+                            str(fpath),
+                            repo_type="dataset",
+                            revision=self.revision,
+                            local_dir=self.root,
+                        )
+                        break
+                    except Exception as exc:
+                        retryable_status = any(
+                            status in str(exc) for status in ("429", "502", "503", "504")
+                        )
+                        if not retryable_status:
+                            raise
+                        logging.warning(
+                            "Transient download error while downloading %s; sleeping before retry",
+                            fpath,
+                        )
+                        time.sleep(300)
+                if idx % 1000 == 0:
+                    logging.info("Downloaded %s/%s dataset files", idx, len(allow_patterns))
+            return
+
         snapshot_download(
             self.repo_id,
             repo_type="dataset",
@@ -576,7 +642,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
         # https://huggingface.co/docs/huggingface_hub/en/guides/download#faster-downloads
         files = None
         ignore_patterns = None if download_videos else "videos/"
-        if self.episodes is not None:
+        if self.episodes is not None or self.selected_video_keys is not None:
             files = self.get_episodes_file_paths()
 
         self.pull_from_repo(allow_patterns=files, ignore_patterns=ignore_patterns)
